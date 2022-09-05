@@ -26,6 +26,10 @@ fn vs_main(
 var t_diffuse: texture_2d<f32>;
 [[group(0), binding(1)]]
 var s_diffuse: sampler;
+[[group(0), binding(2)]]
+var t_diffuse2: texture_2d<f32>;
+[[group(0), binding(3)]]
+var s_diffuse2: sampler;
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
