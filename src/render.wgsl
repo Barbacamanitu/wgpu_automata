@@ -10,6 +10,10 @@ struct VertexOutput {
     [[location(0)]] tex_coords: vec2<f32>;
 };
 
+fn close(a: f32, b: i32) -> bool {
+    return abs(a - f32(b)) < 0.1;
+}
+
 [[stage(vertex)]]
 fn vs_main(
     model: VertexInput,
@@ -33,5 +37,12 @@ var s_diffuse2: sampler;
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    let alive = vec4<f32>(0.09,0.47,0.0,1.0);
+    let dead = vec4<f32>(0.0,0.0,0.0,1.0);
+    let cell = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    if (close(cell.r,1)) {
+        return alive;
+    } else {
+        return dead;
+    }
 }

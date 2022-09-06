@@ -2,11 +2,45 @@ use pollster::FutureExt;
 
 use crate::gpu_interface::GPUInterface;
 
-pub struct Life {}
+pub struct Life {
+    compute_pipeline: wgpu::ComputePipeline,
+    textures: [wgpu::Texture; 2],
+    texture_size: wgpu::Extent3d,
+    current_frame: usize,
+}
 
 impl Life {
-    pub async fn run(gpu: &GPUInterface) {
-        let input_image = image::load_from_memory(include_bytes!("test1.png"))
+    fn get_read_write(&self) -> (usize, usize) {
+        let mut read = 0;
+        let mut write = 1;
+        if self.current_frame % 2 == 1 {
+            read = 1;
+            write = 0;
+        }
+        (read, write)
+    }
+    pub fn get_current_texture(&self) -> &wgpu::Texture {
+        &self.textures[self.get_read_write().1]
+    }
+
+    pub fn new(gpu: &GPUInterface) -> Life {
+        let shader = gpu
+            .device
+            .create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("Grayscale shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("life.wgsl").into()),
+            });
+
+        let pipeline = gpu
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Life compute pipeline"),
+                layout: None,
+                module: &shader,
+                entry_point: "life_main",
+            });
+
+        let input_image = image::load_from_memory(include_bytes!("gol1.png"))
             .unwrap()
             .to_rgba8();
         let (width, height) = input_image.dimensions();
@@ -42,7 +76,6 @@ impl Life {
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::STORAGE_BINDING,
         });
-
         gpu.queue.write_texture(
             input_texture.as_image_copy(),
             bytemuck::cast_slice(input_image.as_raw()),
@@ -54,135 +87,54 @@ impl Life {
             texture_size,
         );
 
-        let shader = gpu
-            .device
-            .create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("Grayscale shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("grayscale.wgsl").into()),
-            });
+        Life {
+            compute_pipeline: pipeline,
+            textures: [input_texture, output_texture],
+            texture_size: texture_size,
+            current_frame: 0,
+        }
+    }
 
-        let pipeline = gpu
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Grayscale pipeline"),
-                layout: None,
-                module: &shader,
-                entry_point: "grayscale_main",
-            });
-
-        let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Texture bind group"),
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &input_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &output_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-            ],
-        });
-
-        let texture_bind_group2 = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Texture bind group"),
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &output_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &input_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                },
-            ],
-        });
-
-        // Dispatch
-
+    pub fn step(&mut self, gpu: &GPUInterface) {
+        let (read, write) = self.get_read_write();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Texture bind group"),
+            layout: &self.compute_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self.textures[read].create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self.textures[write].create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+            ],
+        });
+        // Dispatch
 
+        let (dispatch_with, dispatch_height) = Life::compute_work_group_count(
+            (self.texture_size.width, self.texture_size.height),
+            (16, 16),
+        );
         {
-            let (dispatch_with, dispatch_height) =
-                Life::compute_work_group_count((texture_size.width, texture_size.height), (16, 16));
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Grayscale pass"),
+                label: Some("Life step"),
             });
-            compute_pass.set_pipeline(&pipeline);
+            compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &texture_bind_group, &[]);
             compute_pass.dispatch(dispatch_with, dispatch_height, 1);
-            //compute_pass.set_bind_group(0, &texture_bind_group2, &[]);
-            //compute_pass.dispatch(dispatch_with, dispatch_height, 1);
         }
 
-        //Pass # 2
-
-        // Get the result.
-
-        let padded_bytes_per_row = Life::padded_bytes_per_row(width);
-        let unpadded_bytes_per_row = width as usize * 4;
-
-        let output_buffer_size =
-            padded_bytes_per_row as u64 * height as u64 * std::mem::size_of::<u8>() as u64;
-        let output_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: output_buffer_size,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
-        encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
-                aspect: wgpu::TextureAspect::All,
-                texture: &output_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            wgpu::ImageCopyBuffer {
-                buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: std::num::NonZeroU32::new(padded_bytes_per_row as u32),
-                    rows_per_image: std::num::NonZeroU32::new(height),
-                },
-            },
-            texture_size,
-        );
         gpu.queue.submit(Some(encoder.finish()));
-
-        let buffer_slice = output_buffer.slice(..);
-        let mapping = buffer_slice.map_async(wgpu::MapMode::Read);
-
-        gpu.device.poll(wgpu::Maintain::Wait);
-        mapping.block_on();
-
-        let padded_data = buffer_slice.get_mapped_range();
-
-        let mut pixels: Vec<u8> = vec![0; unpadded_bytes_per_row * height as usize];
-        for (padded, pixels) in padded_data
-            .chunks_exact(padded_bytes_per_row)
-            .zip(pixels.chunks_exact_mut(unpadded_bytes_per_row))
-        {
-            pixels.copy_from_slice(&padded[..unpadded_bytes_per_row]);
-        }
-
-        if let Some(output_image) =
-            image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, &pixels[..])
-        {
-            output_image.save("test2.png");
-        }
+        self.current_frame += 1;
     }
 
     fn compute_work_group_count(

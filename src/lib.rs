@@ -1,19 +1,19 @@
+use std::{thread, time::Duration};
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 mod gpu_interface;
 mod life;
-mod renderstate;
-mod texture;
+mod renderer;
+mod time;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-use renderstate::RenderState;
-
-use crate::{gpu_interface::GPUInterface, life::Life};
+use crate::{gpu_interface::GPUInterface, life::Life, renderer::Renderer, time::Time};
 
 // main.rs
 #[repr(C)]
@@ -51,16 +51,6 @@ impl Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
-pub async fn test_compute() {
-    println!("Testing compute shader.");
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let gpu = GPUInterface::new(&window).await;
-    let life = Life::run(&gpu).await;
-
-    println!("Finished.");
-}
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -74,8 +64,14 @@ pub async fn run() {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-
-    let mut state = RenderState::new(&window).await;
+    let mut gpu: GPUInterface = GPUInterface::new(&window).await;
+    let mut life: Life = Life::new(&gpu);
+    let mut time = Time::new(
+        Duration::from_millis(16),
+        Duration::from_millis(16),
+        Duration::from_secs(2),
+    );
+    let mut state = Renderer::new(&gpu);
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to set
@@ -103,11 +99,11 @@ pub async fn run() {
             if !state.input(event) {
                 match event {
                     WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
+                        state.resize(*physical_size, &mut gpu);
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         // new_inner_size is &&mut so we have to dereference it twice
-                        state.resize(**new_inner_size);
+                        state.resize(**new_inner_size, &mut gpu);
                     }
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
@@ -124,15 +120,25 @@ pub async fn run() {
             }
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
-            state.update();
-            match state.render() {
-                Ok(_) => {}
-                // Reconfigure the surface if lost
-                Err(wgpu::SurfaceError::Lost) => state.resize(state.gpu.size),
-                // The system is out of memory, we should probably quit
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                // All other errors (Outdated, Timeout) should be resolved by the next frame
-                Err(e) => eprintln!("{:?}", e),
+            if time.update_tick() {
+                life.step(&gpu);
+            }
+            if time.render_tick() {
+                match state.render(&gpu, &life) {
+                    Ok(_) => {}
+                    // Reconfigure the surface if lost
+                    Err(wgpu::SurfaceError::Lost) => state.resize(gpu.size, &mut gpu),
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    // All other errors (Outdated, Timeout) should be resolved by the next frame
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            }
+            match time.get_avg_fps() {
+                Some(fps) => {
+                    println!("FPS: {}, Updates/Sec: {}", fps.render_fps, fps.update_fps);
+                }
+                None => {}
             }
         }
         Event::MainEventsCleared => {
