@@ -8,6 +8,7 @@ mod life;
 mod renderer;
 mod time;
 use winit::{
+    dpi::PhysicalSize,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
@@ -61,15 +62,24 @@ pub async fn run() {
             env_logger::init();
         }
     }
+    let (width, height) = (1024, 1024);
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_inner_size(PhysicalSize::new(width, height))
+        .build(&event_loop)
+        .unwrap();
     let mut gpu: GPUInterface = GPUInterface::new(&window).await;
-    let mut life: Life = Life::new(&gpu);
+    /*let input_image = image::load_from_memory(include_bytes!("gol1.png"))
+    .unwrap()
+    .to_rgba8();*/
+    let input_image = Life::random_image(1024, 1024);
+    let mut life: Life = Life::new(&gpu, &input_image);
     let mut time = Time::new(
-        Duration::from_millis(16),
-        Duration::from_millis(16),
-        Duration::from_secs(2),
+        5,
+        Duration::from_secs(1),
+        Duration::from_millis(10),
+        Duration::from_millis(0),
     );
     let mut state = Renderer::new(&gpu);
     #[cfg(target_arch = "wasm32")]
@@ -120,21 +130,24 @@ pub async fn run() {
             }
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
-            if time.update_tick() {
-                life.step(&gpu);
-            }
-            if time.render_tick() {
-                match state.render(&gpu, &life) {
-                    Ok(_) => {}
-                    // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => state.resize(gpu.size, &mut gpu),
-                    // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{:?}", e),
+            match state.render(&gpu, &life) {
+                Ok(_) => {
+                    time.render_tick();
                 }
+                // Reconfigure the surface if lost
+                Err(wgpu::SurfaceError::Lost) => state.resize(gpu.size, &mut gpu),
+                // The system is out of memory, we should probably quit
+                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                // All other errors (Outdated, Timeout) should be resolved by the next frame
+                Err(e) => eprintln!("{:?}", e),
             }
-            match time.get_avg_fps() {
+
+            while time.can_update() {
+                life.step(&gpu);
+                time.update_tick();
+            }
+
+            match time.get_fps() {
                 Some(fps) => {
                     println!("FPS: {}, Updates/Sec: {}", fps.render_fps, fps.update_fps);
                 }

@@ -15,6 +15,7 @@ cfg-if = "1"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 anyhow = "1.0"
 futures-intrusive = "0.4.0"
+rand = "0.8.5"
 
 [dependencies.image]
 version = "0.24"

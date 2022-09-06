@@ -1,3 +1,4 @@
+use image::{Pixel, Rgba};
 use pollster::FutureExt;
 
 use crate::gpu_interface::GPUInterface;
@@ -23,7 +24,25 @@ impl Life {
         &self.textures[self.get_read_write().1]
     }
 
-    pub fn new(gpu: &GPUInterface) -> Life {
+    pub fn random_image(w: u32, h: u32) -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
+        let mut image_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+            image::ImageBuffer::new(w, h);
+        for (x, y, p) in image_buffer.enumerate_pixels_mut() {
+            let black = Rgba::from_slice(&[0, 0, 0, 255]);
+            let white = Rgba::from_slice(&[255, 255, 255, 255]);
+            if rand::random() {
+                *p = *black;
+            } else {
+                *p = *white;
+            }
+        }
+        image_buffer
+    }
+
+    pub fn new(
+        gpu: &GPUInterface,
+        input_image: &image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+    ) -> Life {
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -40,9 +59,6 @@ impl Life {
                 entry_point: "life_main",
             });
 
-        let input_image = image::load_from_memory(include_bytes!("gol1.png"))
-            .unwrap()
-            .to_rgba8();
         let (width, height) = input_image.dimensions();
 
         let texture_size = wgpu::Extent3d {

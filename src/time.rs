@@ -1,14 +1,16 @@
 use std::time::{Duration, Instant};
 
 pub struct Time {
+    last_frame: Instant,
     last_update: Instant,
-    last_render: Instant,
-    update_duration: Duration,
-    render_duration: Duration,
+    last_fps_check: Instant,
     fps_update_duration: Duration,
-    last_fps_update: Instant,
-    frame_count: u32,
-    update_count: u32,
+    max_update_time: Duration,
+    update_delay: Duration,
+    target_updates_per_frame: u32,
+    frame_since_last_fps_check: u32,
+    updates_since_last_fps_check: u32,
+    updates_this_frame: u32,
 }
 
 pub struct FPSData {
@@ -18,30 +20,36 @@ pub struct FPSData {
 
 impl Time {
     pub fn new(
-        update_duration: Duration,
-        render_duration: Duration,
+        updates_per_frame: u32,
         fps_update_duration: Duration,
+        max_update_time: Duration,
+        update_delay: Duration,
     ) -> Time {
         Time {
+            last_frame: Instant::now(),
+            last_fps_check: Instant::now(),
+            fps_update_duration: fps_update_duration,
+            max_update_time,
+            target_updates_per_frame: updates_per_frame,
+            frame_since_last_fps_check: 0,
+            updates_since_last_fps_check: 0,
+            updates_this_frame: 0,
+            update_delay,
             last_update: Instant::now(),
-            last_render: Instant::now(),
-            update_duration,
-            render_duration,
-            fps_update_duration,
-            last_fps_update: Instant::now(),
-            frame_count: 0,
-            update_count: 0,
         }
     }
 
-    pub fn get_avg_fps(&mut self) -> Option<FPSData> {
-        let elapsed = self.last_fps_update.elapsed();
+    //Returns None if not enough time has passed since the last FPS check. *
+    pub fn get_fps(&mut self) -> Option<FPSData> {
+        let elapsed = self.last_fps_check.elapsed();
         if elapsed > self.fps_update_duration {
-            let fps = (self.frame_count as f32) / self.fps_update_duration.as_secs_f32();
-            let ups = (self.update_count as f32) / self.fps_update_duration.as_secs_f32();
-            self.frame_count = 0;
-            self.update_count = 0;
-            self.last_fps_update = Instant::now();
+            let fps =
+                (self.frame_since_last_fps_check as f32) / self.fps_update_duration.as_secs_f32();
+            let ups =
+                (self.updates_since_last_fps_check as f32) / self.fps_update_duration.as_secs_f32();
+            self.frame_since_last_fps_check = 0;
+            self.updates_since_last_fps_check = 0;
+            self.last_fps_check = Instant::now();
 
             return Some(FPSData {
                 render_fps: fps,
@@ -51,23 +59,24 @@ impl Time {
         None
     }
 
-    pub fn update_tick(&mut self) -> bool {
-        let elapsed = self.last_update.elapsed();
-        if elapsed > self.update_duration {
-            self.last_update = Instant::now();
-            self.update_count += 1;
-            return true;
-        }
-        false
+    //Checks to see if the simulation can update again.Bases this on how long the current frame has lasted, and how many updates have happened this frame.
+    pub fn can_update(&self) -> bool {
+        let is_time_left = self.last_frame.elapsed() < self.max_update_time;
+        let max_frames_reached: bool = self.updates_this_frame >= self.target_updates_per_frame;
+        let delayed_enough = self.last_update.elapsed() > self.update_delay;
+        (is_time_left && !max_frames_reached && delayed_enough)
     }
 
-    pub fn render_tick(&mut self) -> bool {
-        let elapsed = self.last_render.elapsed();
-        if elapsed > self.render_duration {
-            self.last_render = Instant::now();
-            self.frame_count += 1;
-            return true;
-        }
-        false
+    //returns true if the simulation should run another update tick. This checks to see if there's enough time, and that the max updates per frame havent happened.
+    pub fn update_tick(&mut self) {
+        self.updates_this_frame += 1;
+        self.updates_since_last_fps_check += 1;
+        self.last_update = Instant::now();
+    }
+
+    pub fn render_tick(&mut self) {
+        self.last_frame = Instant::now();
+        self.frame_since_last_fps_check += 1;
+        self.updates_this_frame = 0;
     }
 }
