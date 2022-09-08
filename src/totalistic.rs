@@ -1,16 +1,16 @@
 use image::{Pixel, Rgba};
 use pollster::FutureExt;
 
-use crate::gpu_interface::GPUInterface;
+use crate::{gpu_interface::GPUInterface, wgsl_preproc::WgslPreProcessor};
 
-pub struct Life {
+pub struct Totalistic {
     compute_pipeline: wgpu::ComputePipeline,
     textures: [wgpu::Texture; 2],
     texture_size: wgpu::Extent3d,
     current_frame: usize,
 }
 
-impl Life {
+impl Totalistic {
     fn get_read_write(&self) -> (usize, usize) {
         let mut read = 0;
         let mut write = 1;
@@ -42,21 +42,23 @@ impl Life {
     pub fn new(
         gpu: &GPUInterface,
         input_image: &image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-    ) -> Life {
+    ) -> Totalistic {
+        let processor = WgslPreProcessor::new("./shaders");
+        let shader_src = processor.load_and_process("totalistic.wgsl");
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("Grayscale shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("life.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
             });
 
         let pipeline = gpu
             .device
             .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Life compute pipeline"),
+                label: Some("Totalistic compute pipeline"),
                 layout: None,
                 module: &shader,
-                entry_point: "life_main",
+                entry_point: "totalistic_main",
             });
 
         let (width, height) = input_image.dimensions();
@@ -103,7 +105,7 @@ impl Life {
             texture_size,
         );
 
-        Life {
+        Totalistic {
             compute_pipeline: pipeline,
             textures: [input_texture, output_texture],
             texture_size: texture_size,
@@ -136,13 +138,13 @@ impl Life {
         });
         // Dispatch
 
-        let (dispatch_with, dispatch_height) = Life::compute_work_group_count(
+        let (dispatch_with, dispatch_height) = Totalistic::compute_work_group_count(
             (self.texture_size.width, self.texture_size.height),
             (16, 16),
         );
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Life step"),
+                label: Some("Totalistic step"),
             });
             compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &texture_bind_group, &[]);

@@ -4,9 +4,11 @@ use std::{thread, time::Duration};
 use wasm_bindgen::prelude::*;
 
 mod gpu_interface;
-mod life;
 mod renderer;
 mod time;
+mod totalistic;
+mod wgsl_preproc;
+
 use winit::{
     dpi::PhysicalSize,
     event::*,
@@ -14,7 +16,10 @@ use winit::{
     window::WindowBuilder,
 };
 
-use crate::{gpu_interface::GPUInterface, life::Life, renderer::Renderer, time::Time};
+use crate::{
+    gpu_interface::GPUInterface, renderer::Renderer, time::Time, totalistic::Totalistic,
+    wgsl_preproc::WgslPreProcessor,
+};
 
 // main.rs
 #[repr(C)]
@@ -52,6 +57,12 @@ impl Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
+pub fn test() {
+    let processor: WgslPreProcessor = WgslPreProcessor::new("./shaders");
+    let shader = processor.load_and_process("Totalistic.wgsl");
+    println!("Processed: {}", shader);
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -73,13 +84,13 @@ pub async fn run() {
     /*let input_image = image::load_from_memory(include_bytes!("gol1.png"))
     .unwrap()
     .to_rgba8();*/
-    let input_image = Life::random_image(1024, 1024);
-    let mut life: Life = Life::new(&gpu, &input_image);
+    let input_image = Totalistic::random_image(width, height);
+    let mut totalistic: Totalistic = Totalistic::new(&gpu, &input_image);
     let mut time = Time::new(
-        5,
+        50,
         Duration::from_secs(1),
         Duration::from_millis(10),
-        Duration::from_millis(0),
+        Duration::from_millis(00),
     );
     let mut state = Renderer::new(&gpu);
     #[cfg(target_arch = "wasm32")]
@@ -130,7 +141,7 @@ pub async fn run() {
             }
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
-            match state.render(&gpu, &life) {
+            match state.render(&gpu, &totalistic) {
                 Ok(_) => {
                     time.render_tick();
                 }
@@ -143,7 +154,7 @@ pub async fn run() {
             }
 
             while time.can_update() {
-                life.step(&gpu);
+                totalistic.step(&gpu);
                 time.update_tick();
             }
 

@@ -1,4 +1,4 @@
-use crate::{gpu_interface::GPUInterface, life::Life};
+use crate::{gpu_interface::GPUInterface, totalistic::Totalistic};
 use wgpu::{util::DeviceExt, Buffer};
 
 // main.rs
@@ -171,7 +171,11 @@ impl Renderer {
         false
     }
 
-    pub fn render(&mut self, gpu: &GPUInterface, life: &Life) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        gpu: &GPUInterface,
+        totalistic: &Totalistic,
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = gpu.surface.get_current_texture()?;
         let view = output
             .texture
@@ -182,7 +186,7 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        let render_tex = life.get_current_texture();
+        let render_tex = totalistic.get_current_texture();
         let renderer_diffuse_bind_group =
             gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &&self.render_bind_group_layout,
