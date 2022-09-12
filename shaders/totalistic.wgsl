@@ -1,18 +1,33 @@
 #include("shader_tools.wgsl");
 
- fn compute_cell(val: f32, sum: f32) -> f32 {
-    //B3678/S34678
-    if (close(val,0) && close(sum,2) ||  close(sum,3) ||  close(sum,4)) {
+ 
+
+ struct Rules {
+    born: array<u32, 8>;
+    stay_alive: array<u32,8>;
+    
+ };
+
+fn compute_cell(val: f32, sum: f32, rules: Rules) -> f32 {
+   
+    var born = ( ((rules.born[0] == 1u) && close(sum,1)) || ((rules.born[1] == 1u) && close(sum,2)) || ((rules.born[2] == 1u) && close(sum,3)) || ((rules.born[3] == 1u) && close(sum,4)) || ((rules.born[4] == 1u) && close(sum,5)) || ((rules.born[5] == 1u) && close(sum,6))  || ((rules.born[6] == 1u) && close(sum,7)) || ((rules.born[7] == 1u) && close(sum,8))   );
+    var stay_alive = ( ((rules.stay_alive[0] == 1u) && close(sum,1)) || ((rules.stay_alive[1] == 1u) && close(sum,2)) || ((rules.stay_alive[2] == 1u) && close(sum,3)) || ((rules.stay_alive[3] == 1u) && close(sum,4)) || ((rules.stay_alive[4] == 1u) && close(sum,5)) || ((rules.stay_alive[5] == 1u) && close(sum,6))  || ((rules.stay_alive[6] == 1u) && close(sum,7)) || ((rules.stay_alive[7] == 1u) && close(sum,8))   );
+
+
+    
+    
+    if (close(val,0) && born) {
         return 1.0;
     }
-    
+    if (close(val,1) && stay_alive) {
+        return 1.0;
+    }
     return 0.0;
  }
 
-
 [[group(0), binding(0)]] var input_texture : texture_2d<f32>;
 [[group(0), binding(1)]] var output_texture : texture_storage_2d<rgba8unorm, write>;
-
+[[group(0), binding(2)]] var<uniform> rules : Rules;
 
 [[stage(compute), workgroup_size(16, 16)]]
 fn totalistic_main(
@@ -49,7 +64,7 @@ fn totalistic_main(
     let r_down  =  get_pixel_wrap(c_right_down,dimensions,input_texture).r;    
 
     let sum = left + right + up + down + l_up + r_up + l_down + r_down;
-    let cell =  compute_cell(me, sum);
+    let cell =  compute_cell(me, sum, rules);
     let new_color = vec4<f32>(cell,cell,cell,1.0);
 
     textureStore(output_texture, coords.xy, new_color);

@@ -1,8 +1,7 @@
-use crate::{gpu_interface::GPUInterface, totalistic::Totalistic};
+use crate::{gpu_interface::GPUInterface, totalistic::Totalistic, Vertex};
 use wgpu::{util::DeviceExt, Buffer};
 
 // main.rs
-use super::Vertex;
 
 use winit::{event::WindowEvent, window::Window};
 

@@ -17,7 +17,10 @@ use winit::{
 };
 
 use crate::{
-    gpu_interface::GPUInterface, renderer::Renderer, time::Time, totalistic::Totalistic,
+    gpu_interface::GPUInterface,
+    renderer::Renderer,
+    time::Time,
+    totalistic::{Rules, Totalistic},
     wgsl_preproc::WgslPreProcessor,
 };
 
@@ -59,7 +62,7 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 pub fn test() {
     let processor: WgslPreProcessor = WgslPreProcessor::new("./shaders");
-    let shader = processor.load_and_process("Totalistic.wgsl");
+    let shader = processor.load_and_process("totalistic.wgsl").unwrap();
     println!("Processed: {}", shader);
 }
 
@@ -81,16 +84,18 @@ pub async fn run() {
         .build(&event_loop)
         .unwrap();
     let mut gpu: GPUInterface = GPUInterface::new(&window).await;
-    /*let input_image = image::load_from_memory(include_bytes!("gol1.png"))
-    .unwrap()
-    .to_rgba8();*/
-    let input_image = Totalistic::random_image(width, height);
-    let mut totalistic: Totalistic = Totalistic::new(&gpu, &input_image);
+    let input_image = image::load_from_memory(include_bytes!("gol1.png"))
+        .unwrap()
+        .to_rgba8();
+    //let input_image = Totalistic::random_image(width, height);
+
+    let rules = Rules::from_rule_str("B3/S23").unwrap();
+    let mut totalistic: Totalistic = Totalistic::new(&gpu, &input_image, rules);
     let mut time = Time::new(
-        50,
+        1,
         Duration::from_secs(1),
         Duration::from_millis(10),
-        Duration::from_millis(00),
+        Duration::from_millis(10),
     );
     let mut state = Renderer::new(&gpu);
     #[cfg(target_arch = "wasm32")]

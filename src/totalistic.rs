@@ -1,5 +1,8 @@
+use bytemuck::{Pod, Zeroable};
 use image::{Pixel, Rgba};
 use pollster::FutureExt;
+use regex::Regex;
+use wgpu::util::DeviceExt;
 
 use crate::{gpu_interface::GPUInterface, wgsl_preproc::WgslPreProcessor};
 
@@ -8,6 +11,59 @@ pub struct Totalistic {
     textures: [wgpu::Texture; 2],
     texture_size: wgpu::Extent3d,
     current_frame: usize,
+    rules: Rules,
+}
+
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+#[repr(C)]
+pub struct Rules {
+    pub born: [u32; 8],
+    pub stay_alive: [u32; 8],
+}
+
+#[derive(Debug)]
+pub enum RuleCreationError {
+    InvalidRuleString,
+    Unknown,
+}
+
+impl Rules {
+    pub fn from_rule_str(rstr: &str) -> Result<Rules, RuleCreationError> {
+        let re_str = r#"B(\d+)/S(\d+)"#;
+        let re: Regex = Regex::new(re_str).unwrap();
+        let caps = re.captures(rstr);
+        match caps {
+            Some(c) => {
+                if c.len() != 3 {
+                    return Err(RuleCreationError::InvalidRuleString);
+                }
+                let born = c[1].chars();
+                let stay = c[2].chars();
+                let mut born_ints: [u32; 8] = [0; 8];
+                let mut stay_ints: [u32; 8] = [0; 8];
+                for b in born {
+                    let b_int = b.to_digit(10);
+                    match b_int {
+                        Some(b_int_s) => born_ints[(b_int_s - 1) as usize] = 1,
+                        None => return Err(RuleCreationError::InvalidRuleString),
+                    }
+                }
+
+                for s in stay {
+                    let s_int = s.to_digit(10);
+                    match s_int {
+                        Some(s_int_s) => stay_ints[(s_int_s - 1) as usize] = 1,
+                        None => return Err(RuleCreationError::InvalidRuleString),
+                    }
+                }
+                Ok(Rules {
+                    born: born_ints,
+                    stay_alive: stay_ints,
+                })
+            }
+            None => Err(RuleCreationError::InvalidRuleString),
+        }
+    }
 }
 
 impl Totalistic {
@@ -42,9 +98,10 @@ impl Totalistic {
     pub fn new(
         gpu: &GPUInterface,
         input_image: &image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+        rules: Rules,
     ) -> Totalistic {
         let processor = WgslPreProcessor::new("./shaders");
-        let shader_src = processor.load_and_process("totalistic.wgsl");
+        let shader_src = processor.load_and_process("totalistic.wgsl").unwrap();
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -110,6 +167,7 @@ impl Totalistic {
             textures: [input_texture, output_texture],
             texture_size: texture_size,
             current_frame: 0,
+            rules: rules,
         }
     }
 
@@ -118,8 +176,17 @@ impl Totalistic {
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Texture bind group"),
+
+        let rules_buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Rules"),
+                contents: bytemuck::bytes_of(&self.rules),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        let compute_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("compute bind group"),
             layout: &self.compute_pipeline.get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {
@@ -134,6 +201,10 @@ impl Totalistic {
                         &self.textures[write].create_view(&wgpu::TextureViewDescriptor::default()),
                     ),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: rules_buffer.as_entire_binding(),
+                },
             ],
         });
         // Dispatch
@@ -147,7 +218,7 @@ impl Totalistic {
                 label: Some("Totalistic step"),
             });
             compute_pass.set_pipeline(&self.compute_pipeline);
-            compute_pass.set_bind_group(0, &texture_bind_group, &[]);
+            compute_pass.set_bind_group(0, &compute_bind_group, &[]);
             compute_pass.dispatch(dispatch_with, dispatch_height, 1);
         }
 
