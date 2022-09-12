@@ -4,7 +4,10 @@ use std::{thread, time::Duration};
 use wasm_bindgen::prelude::*;
 
 mod gpu_interface;
+mod image_util;
 mod renderer;
+mod rule;
+mod simulator;
 mod time;
 mod totalistic;
 mod wgsl_preproc;
@@ -19,9 +22,10 @@ use winit::{
 use crate::{
     gpu_interface::GPUInterface,
     renderer::Renderer,
+    rule::Rule,
+    simulator::{IVec2, Simulator},
     time::Time,
-    totalistic::{Rules, Totalistic},
-    wgsl_preproc::WgslPreProcessor,
+    totalistic::Totalistic,
 };
 
 // main.rs
@@ -60,12 +64,6 @@ impl Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
-pub fn test() {
-    let processor: WgslPreProcessor = WgslPreProcessor::new("./shaders");
-    let shader = processor.load_and_process("totalistic.wgsl").unwrap();
-    println!("Processed: {}", shader);
-}
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -77,27 +75,19 @@ pub async fn run() {
         }
     }
     let (width, height) = (1024, 1024);
-
+    let size: IVec2 = IVec2 {
+        x: width,
+        y: height,
+    };
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_inner_size(PhysicalSize::new(width, height))
+        .with_inner_size(PhysicalSize::new(size.x, size.y))
         .build(&event_loop)
         .unwrap();
-    let mut gpu: GPUInterface = GPUInterface::new(&window).await;
     let input_image = image::load_from_memory(include_bytes!("gol1.png"))
         .unwrap()
-        .to_rgba8();
-    //let input_image = Totalistic::random_image(width, height);
-
-    let rules = Rules::from_rule_str("B3/S23").unwrap();
-    let mut totalistic: Totalistic = Totalistic::new(&gpu, &input_image, rules);
-    let mut time = Time::new(
-        1,
-        Duration::from_secs(1),
-        Duration::from_millis(10),
-        Duration::from_millis(10),
-    );
-    let mut state = Renderer::new(&gpu);
+        .into_rgba8();
+    let mut sim: Simulator = Simulator::new(size, "B3/S32", &window, input_image);
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to set
@@ -122,14 +112,14 @@ pub async fn run() {
             ref event,
             window_id,
         } if window_id == window.id() => {
-            if !state.input(event) {
+            if !sim.input(event) {
                 match event {
                     WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size, &mut gpu);
+                        sim.resize(*physical_size);
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         // new_inner_size is &&mut so we have to dereference it twice
-                        state.resize(**new_inner_size, &mut gpu);
+                        sim.resize(**new_inner_size);
                     }
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
@@ -146,28 +136,14 @@ pub async fn run() {
             }
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
-            match state.render(&gpu, &totalistic) {
-                Ok(_) => {
-                    time.render_tick();
-                }
+            match sim.render() {
+                Ok(_) => {}
                 // Reconfigure the surface if lost
-                Err(wgpu::SurfaceError::Lost) => state.resize(gpu.size, &mut gpu),
+                Err(wgpu::SurfaceError::Lost) => sim.resize(sim.gpu.size),
                 // The system is out of memory, we should probably quit
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                 // All other errors (Outdated, Timeout) should be resolved by the next frame
                 Err(e) => eprintln!("{:?}", e),
-            }
-
-            while time.can_update() {
-                totalistic.step(&gpu);
-                time.update_tick();
-            }
-
-            match time.get_fps() {
-                Some(fps) => {
-                    println!("FPS: {}, Updates/Sec: {}", fps.render_fps, fps.update_fps);
-                }
-                None => {}
             }
         }
         Event::MainEventsCleared => {

@@ -4,66 +4,14 @@ use pollster::FutureExt;
 use regex::Regex;
 use wgpu::util::DeviceExt;
 
-use crate::{gpu_interface::GPUInterface, wgsl_preproc::WgslPreProcessor};
+use crate::{gpu_interface::GPUInterface, rule::Rule, wgsl_preproc::WgslPreProcessor};
 
 pub struct Totalistic {
     compute_pipeline: wgpu::ComputePipeline,
     textures: [wgpu::Texture; 2],
     texture_size: wgpu::Extent3d,
     current_frame: usize,
-    rules: Rules,
-}
-
-#[derive(Copy, Clone, Pod, Zeroable, Debug)]
-#[repr(C)]
-pub struct Rules {
-    pub born: [u32; 8],
-    pub stay_alive: [u32; 8],
-}
-
-#[derive(Debug)]
-pub enum RuleCreationError {
-    InvalidRuleString,
-    Unknown,
-}
-
-impl Rules {
-    pub fn from_rule_str(rstr: &str) -> Result<Rules, RuleCreationError> {
-        let re_str = r#"B(\d+)/S(\d+)"#;
-        let re: Regex = Regex::new(re_str).unwrap();
-        let caps = re.captures(rstr);
-        match caps {
-            Some(c) => {
-                if c.len() != 3 {
-                    return Err(RuleCreationError::InvalidRuleString);
-                }
-                let born = c[1].chars();
-                let stay = c[2].chars();
-                let mut born_ints: [u32; 8] = [0; 8];
-                let mut stay_ints: [u32; 8] = [0; 8];
-                for b in born {
-                    let b_int = b.to_digit(10);
-                    match b_int {
-                        Some(b_int_s) => born_ints[(b_int_s - 1) as usize] = 1,
-                        None => return Err(RuleCreationError::InvalidRuleString),
-                    }
-                }
-
-                for s in stay {
-                    let s_int = s.to_digit(10);
-                    match s_int {
-                        Some(s_int_s) => stay_ints[(s_int_s - 1) as usize] = 1,
-                        None => return Err(RuleCreationError::InvalidRuleString),
-                    }
-                }
-                Ok(Rules {
-                    born: born_ints,
-                    stay_alive: stay_ints,
-                })
-            }
-            None => Err(RuleCreationError::InvalidRuleString),
-        }
-    }
+    rules: Rule,
 }
 
 impl Totalistic {
@@ -80,28 +28,14 @@ impl Totalistic {
         &self.textures[self.get_read_write().1]
     }
 
-    pub fn random_image(w: u32, h: u32) -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
-        let mut image_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-            image::ImageBuffer::new(w, h);
-        for (x, y, p) in image_buffer.enumerate_pixels_mut() {
-            let black = Rgba::from_slice(&[0, 0, 0, 255]);
-            let white = Rgba::from_slice(&[255, 255, 255, 255]);
-            if rand::random() {
-                *p = *black;
-            } else {
-                *p = *white;
-            }
-        }
-        image_buffer
-    }
-
     pub fn new(
         gpu: &GPUInterface,
         input_image: &image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-        rules: Rules,
+        rules: Rule,
     ) -> Totalistic {
-        let processor = WgslPreProcessor::new("./shaders");
-        let shader_src = processor.load_and_process("totalistic.wgsl").unwrap();
+        let shader_root = "./shaders";
+        let shader_src =
+            WgslPreProcessor::load_and_process("totalistic.wgsl", shader_root).unwrap();
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {

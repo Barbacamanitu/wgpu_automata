@@ -166,10 +166,6 @@ impl Renderer {
         }
     }
 
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
-        false
-    }
-
     pub fn render(
         &mut self,
         gpu: &GPUInterface,
