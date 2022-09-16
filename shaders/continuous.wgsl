@@ -56,10 +56,14 @@ fn main(
     let val = activation(conv);
     var g = me.g;
     var b = me.b;
-    if (val > 0.8) {
+    if (val > 0.8 && g < 0.5) {
         g = 1.0;
     } else {
-        g = g * .95;
+        g = g * .99;
+    }
+
+    if (g < 0.2) {
+        g = g * .5;
     }
 
  

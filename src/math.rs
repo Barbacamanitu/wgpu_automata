@@ -8,7 +8,7 @@ pub struct FVec2 {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, Default)]
 pub struct FVec3 {
     pub x: f32,
     pub y: f32,

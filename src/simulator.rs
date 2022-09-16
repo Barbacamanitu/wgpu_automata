@@ -6,11 +6,11 @@ use winit::{
 };
 
 use crate::{
-    camera::{Camera, FVec3},
+    camera::Camera,
     computer::Computer,
     continuous::Continuous,
     gpu_interface::GPUInterface,
-    math::IVec2,
+    math::{FVec3, IVec2},
     renderer::Renderer,
     rule::Rule,
     time::Time,
@@ -33,6 +33,7 @@ pub struct Simulator {
     mouse_down: bool,
     mouse_drag_pos: FVec3,
     mouse_drag_start: bool,
+    latest_mouse_pos: FVec3,
 }
 
 impl Simulator {
@@ -41,6 +42,7 @@ impl Simulator {
         sim_params: SimParams,
         window: &Window,
         input_image: ImageType,
+        time: Time,
     ) -> Simulator {
         let gpu: GPUInterface = pollster::block_on(GPUInterface::new(&window));
         /*let input_image = image::load_from_memory(include_bytes!("gol1.png"))
@@ -52,12 +54,7 @@ impl Simulator {
             SimParams::Totalistic(rule) => Box::new(Totalistic::new(&gpu, &input_image, rule)),
             SimParams::Continuous => Box::new(Continuous::new(&gpu, &input_image)),
         };
-        let time = Time::new(
-            2,
-            Duration::from_secs(1),
-            Duration::from_millis(10),
-            Duration::from_millis(0),
-        );
+
         let renderer = Renderer::new(&gpu, renderer_size, sim_params);
 
         let camera = Camera::new();
@@ -73,6 +70,7 @@ impl Simulator {
                 y: 0.0,
                 z: 0.0,
             },
+            latest_mouse_pos: FVec3::default(),
             mouse_drag_start: false,
         }
     }
@@ -132,24 +130,22 @@ impl Simulator {
                 position,
                 modifiers,
             } => {
+                //Update mouse position
+                self.latest_mouse_pos = FVec3 {
+                    x: position.x as f32,
+                    y: position.y as f32,
+                    z: 0.0,
+                };
+
                 if self.mouse_down {
-                    if self.mouse_drag_start {
-                        self.mouse_drag_start = false;
-                        self.mouse_drag_pos = FVec3 {
-                            x: position.x as f32,
-                            y: position.y as f32,
-                            z: 0.0,
-                        }
-                    } else {
-                        //Drag camera
-                        let difference = FVec3 {
-                            x: self.mouse_drag_pos.x - position.x as f32,
-                            y: self.mouse_drag_pos.y - position.y as f32,
-                            z: 0.0,
-                        };
-                        self.camera.position.x = difference.x * self.camera.zoom;
-                        self.camera.position.y = difference.y * self.camera.zoom;
-                    }
+                    //Drag camera
+                    let difference = FVec3 {
+                        x: self.mouse_drag_pos.x - position.x as f32,
+                        y: self.mouse_drag_pos.y - position.y as f32,
+                        z: 0.0,
+                    };
+                    self.camera.position.x = difference.x * self.camera.zoom;
+                    self.camera.position.y = difference.y * self.camera.zoom;
                 }
             }
 
@@ -175,11 +171,14 @@ impl Simulator {
                     MouseButton::Left => {
                         self.mouse_down = true;
                         self.mouse_drag_start = true;
+                        self.mouse_drag_pos = self.latest_mouse_pos;
                     }
                     _ => {}
                 },
                 winit::event::ElementState::Released => match button {
-                    MouseButton::Left => self.mouse_down = false,
+                    MouseButton::Left => {
+                        self.mouse_down = false;
+                    }
                     _ => {}
                 },
             },

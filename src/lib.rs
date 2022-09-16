@@ -17,7 +17,7 @@ mod totalistic;
 mod wgsl_preproc;
 
 use winit::{
-    dpi::PhysicalSize,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
@@ -83,20 +83,34 @@ pub async fn run() {
             env_logger::init();
         }
     }
-    let renderer_size = IVec2::new(1024, 1024);
+    let p = PhysicalPosition::new(0, 0);
+    let renderer_size = IVec2::new(1920, 1080);
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_inner_size(PhysicalSize::new(renderer_size.x, renderer_size.y))
+        .with_title("GPU_Automata")
+        .with_position(p)
         .build(&event_loop)
         .unwrap();
-    /*(let input_image = image::load_from_memory(include_bytes!("worms.png"))
+    /*(let input_image = image::load_from_memory(include_bytes!("gol1.png"))
     .unwrap()
     .into_rgba8();*/
 
-    let input_image = image_util::ImageUtil::random_image_color(4096, 4096);
+    let input_image = image_util::ImageUtil::random_image_color(1920 / 2, 1080 / 2);
+    let time = Time::new(
+        10,
+        Duration::from_secs(1),
+        Duration::from_millis(10),
+        Duration::from_millis(0),
+    );
     let rule: Rule = Rule::from_rule_str("B3/S23").unwrap();
-    let mut sim: Simulator =
-        Simulator::new(renderer_size, SimParams::Continuous, &window, input_image);
+    let mut sim: Simulator = Simulator::new(
+        renderer_size,
+        SimParams::Continuous,
+        &window,
+        input_image,
+        time,
+    );
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to set
