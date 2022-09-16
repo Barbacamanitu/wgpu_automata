@@ -1,23 +1,17 @@
-use bytemuck::{Pod, Zeroable};
-use image::{Pixel, Rgba};
-use pollster::FutureExt;
-use regex::Regex;
 use wgpu::util::DeviceExt;
 
 use crate::{
-    computer::Computer, gpu_interface::GPUInterface, math::IVec2, rule::Rule,
-    wgsl_preproc::WgslPreProcessor,
+    computer::Computer, gpu_interface::GPUInterface, math::IVec2, wgsl_preproc::WgslPreProcessor,
 };
 
-pub struct Totalistic {
+pub struct Continuous {
     compute_pipeline: wgpu::ComputePipeline,
     textures: [wgpu::Texture; 2],
     current_frame: usize,
-    rules: Rule,
     pub size: IVec2,
 }
 
-impl Computer for Totalistic {
+impl Computer for Continuous {
     fn get_current_frame(&self) -> usize {
         self.current_frame
     }
@@ -26,19 +20,11 @@ impl Computer for Totalistic {
         &self.textures
     }
 
-    fn step(&mut self, gpu: &GPUInterface) {
+    fn step(&mut self, gpu: &crate::gpu_interface::GPUInterface) {
         let (read, write) = self.get_read_write();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        let rules_buffer = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Rules"),
-                contents: bytemuck::bytes_of(&self.rules),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
 
         let compute_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("compute bind group"),
@@ -55,10 +41,6 @@ impl Computer for Totalistic {
                     resource: wgpu::BindingResource::TextureView(
                         &self.textures[write].create_view(&wgpu::TextureViewDescriptor::default()),
                     ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: rules_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -84,29 +66,28 @@ impl Computer for Totalistic {
     }
 }
 
-impl Totalistic {
+impl Continuous {
     pub fn new(
         gpu: &GPUInterface,
         input_image: &image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-        rules: Rule,
-    ) -> Totalistic {
+    ) -> Continuous {
         let shader_root = "./shaders";
         let shader_src =
-            WgslPreProcessor::load_and_process("totalistic.wgsl", shader_root).unwrap();
+            WgslPreProcessor::load_and_process("continuous.wgsl", shader_root).unwrap();
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("totalistic shader"),
+                label: Some("continuous shader"),
                 source: wgpu::ShaderSource::Wgsl(shader_src.into()),
             });
 
         let pipeline = gpu
             .device
             .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Totalistic compute pipeline"),
+                label: Some("continuous compute pipeline"),
                 layout: None,
                 module: &shader,
-                entry_point: "totalistic_main",
+                entry_point: "main",
             });
 
         let (width, height) = input_image.dimensions();
@@ -155,12 +136,11 @@ impl Totalistic {
 
         let img_dims = input_image.dimensions();
 
-        Totalistic {
+        Continuous {
             compute_pipeline: pipeline,
             textures: [input_texture, output_texture],
 
             current_frame: 0,
-            rules: rules,
             size: IVec2::new(img_dims.0 as i32, img_dims.1 as i32),
         }
     }

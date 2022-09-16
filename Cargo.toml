@@ -17,6 +17,7 @@ anyhow = "1.0"
 futures-intrusive = "0.4.0"
 rand = "0.8.5"
 regex = "1"
+cgmath = "0.18"
 
 [dependencies.image]
 version = "0.24"

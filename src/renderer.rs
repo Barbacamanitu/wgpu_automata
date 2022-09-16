@@ -1,4 +1,14 @@
-use crate::{gpu_interface::GPUInterface, totalistic::Totalistic, Vertex};
+use crate::{
+    camera::{self, Camera},
+    computer::Computer,
+    gpu_interface::GPUInterface,
+    math::IVec2,
+    simulator::SimParams,
+    totalistic::Totalistic,
+    wgsl_preproc::WgslPreProcessor,
+    Vertex,
+};
+use bytemuck::{Pod, Zeroable};
 use wgpu::{util::DeviceExt, Buffer};
 
 // main.rs
@@ -7,11 +17,20 @@ use winit::{event::WindowEvent, window::Window};
 
 pub struct Renderer {
     pub render_pipeline: wgpu::RenderPipeline,
-    pub render_bind_group_layout: wgpu::BindGroupLayout,
+    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub render_params_bind_group_layout: wgpu::BindGroupLayout,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
     pub sampler: wgpu::Sampler,
+    pub size: IVec2,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct RenderParams {
+    window_size: [i32; 2],
+    sim_size: [i32; 2],
 }
 const VERTICES: &[Vertex] = &[
     Vertex {
@@ -36,24 +55,31 @@ const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 impl Renderer {
     // Creating some of the wgpu types requires async code
-    pub fn new(gpu: &GPUInterface) -> Self {
+    pub fn new(gpu: &GPUInterface, size: IVec2, sim_params: SimParams) -> Self {
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
+
+        let shader_str = match sim_params {
+            SimParams::Totalistic(_) => "render.wgsl",
+            SimParams::Continuous => "render_continuous.wgsl",
+        };
+
+        let shader_src = WgslPreProcessor::load_and_process(shader_str, "./shaders").unwrap();
         let shader = gpu
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("render.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
             });
 
-        let renderer_texture_bind_group_layout =
+        let texture_bind_group_layout =
             gpu.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     entries: &[
@@ -79,12 +105,43 @@ impl Renderer {
                     label: Some("Renderer_texture_bind_group_layout"),
                 });
 
+        let render_params_bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                    label: Some("camera_bind_group_layout"),
+                });
+
         let render_pipeline_layout =
             gpu.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
 
-                    bind_group_layouts: &[&renderer_texture_bind_group_layout],
+                    bind_group_layouts: &[
+                        &texture_bind_group_layout,
+                        &render_params_bind_group_layout,
+                    ],
                     push_constant_ranges: &[],
                 });
 
@@ -152,8 +209,10 @@ impl Renderer {
             vertex_buffer,
             index_buffer,
             num_indices,
-            render_bind_group_layout: renderer_texture_bind_group_layout,
+            texture_bind_group_layout: texture_bind_group_layout,
+            render_params_bind_group_layout: render_params_bind_group_layout,
             sampler,
+            size,
         }
     }
 
@@ -163,13 +222,15 @@ impl Renderer {
             gpu.config.width = new_size.width;
             gpu.config.height = new_size.height;
             gpu.surface.configure(&gpu.device, &gpu.config);
+            self.size = IVec2::new(new_size.width as i32, new_size.height as i32);
         }
     }
 
     pub fn render(
         &mut self,
         gpu: &GPUInterface,
-        totalistic: &Totalistic,
+        totalistic: &Box<dyn Computer>,
+        camera: &Camera,
     ) -> Result<(), wgpu::SurfaceError> {
         let output = gpu.surface.get_current_texture()?;
         let view = output
@@ -182,23 +243,57 @@ impl Renderer {
             });
 
         let render_tex = totalistic.get_current_texture();
-        let renderer_diffuse_bind_group =
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &&self.render_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &render_tex.create_view(&wgpu::TextureViewDescriptor::default()),
-                        ), // CHANGED!
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler), // CHANGED!
-                    },
-                ],
-                label: Some("diffuse_bind_group"),
+        let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &&self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &render_tex.create_view(&wgpu::TextureViewDescriptor::default()),
+                    ), // CHANGED!
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler), // CHANGED!
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
+        let camera_buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::bytes_of(camera),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
+
+        let r_params = RenderParams {
+            window_size: self.size.as_slice(),
+            sim_size: totalistic.get_size().as_slice(),
+        };
+        let render_params_buffer =
+            gpu.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Camera Buffer"),
+                    contents: bytemuck::bytes_of(&r_params),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+        let render_params_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.render_params_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: render_params_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("Render_Params_bind_group"),
+        });
 
         {
             // 1.
@@ -224,7 +319,8 @@ impl Renderer {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &renderer_diffuse_bind_group, &[]);
+            render_pass.set_bind_group(0, &texture_bind_group, &[]);
+            render_pass.set_bind_group(1, &render_params_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);

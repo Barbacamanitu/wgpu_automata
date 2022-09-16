@@ -3,8 +3,12 @@ use std::{thread, time::Duration};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+mod camera;
+mod computer;
+mod continuous;
 mod gpu_interface;
 mod image_util;
+mod math;
 mod renderer;
 mod rule;
 mod simulator;
@@ -21,9 +25,10 @@ use winit::{
 
 use crate::{
     gpu_interface::GPUInterface,
+    math::IVec2,
     renderer::Renderer,
     rule::Rule,
-    simulator::{IVec2, Simulator},
+    simulator::{SimParams, Simulator},
     time::Time,
     totalistic::Totalistic,
 };
@@ -64,6 +69,10 @@ impl Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
+pub fn test() {
+    println!("tset");
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -74,20 +83,20 @@ pub async fn run() {
             env_logger::init();
         }
     }
-    let (width, height) = (1024, 1024);
-    let size: IVec2 = IVec2 {
-        x: width,
-        y: height,
-    };
+    let renderer_size = IVec2::new(1024, 1024);
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_inner_size(PhysicalSize::new(size.x, size.y))
+        .with_inner_size(PhysicalSize::new(renderer_size.x, renderer_size.y))
         .build(&event_loop)
         .unwrap();
-    let input_image = image::load_from_memory(include_bytes!("gol1.png"))
-        .unwrap()
-        .into_rgba8();
-    let mut sim: Simulator = Simulator::new(size, "B3/S32", &window, input_image);
+    /*(let input_image = image::load_from_memory(include_bytes!("worms.png"))
+    .unwrap()
+    .into_rgba8();*/
+
+    let input_image = image_util::ImageUtil::random_image_color(4096, 4096);
+    let rule: Rule = Rule::from_rule_str("B3/S23").unwrap();
+    let mut sim: Simulator =
+        Simulator::new(renderer_size, SimParams::Continuous, &window, input_image);
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to set
