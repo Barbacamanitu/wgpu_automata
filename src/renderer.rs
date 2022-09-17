@@ -1,19 +1,25 @@
+use std::iter;
+
 use crate::{
     camera::{self, Camera},
     computer::Computer,
     gpu_interface::GPUInterface,
-    math::IVec2,
+    gui::Gui,
+    math::{IVec2, Vertex},
     simulator::SimParams,
+    time::Time,
     totalistic::Totalistic,
     wgsl_preproc::WgslPreProcessor,
-    Vertex,
 };
 use bytemuck::{Pod, Zeroable};
-use wgpu::{util::DeviceExt, Buffer};
+use wgpu::{util::DeviceExt, Buffer, SurfaceTexture};
 
 // main.rs
 
-use winit::{event::WindowEvent, window::Window};
+use winit::{
+    event::{Event, WindowEvent},
+    window::Window,
+};
 
 pub struct Renderer {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -24,6 +30,7 @@ pub struct Renderer {
     pub num_indices: u32,
     pub sampler: wgpu::Sampler,
     pub size: IVec2,
+    pub gui: Gui,
 }
 
 #[repr(C)]
@@ -55,7 +62,7 @@ const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 impl Renderer {
     // Creating some of the wgpu types requires async code
-    pub fn new(gpu: &GPUInterface, size: IVec2, sim_params: SimParams) -> Self {
+    pub fn new(gpu: &GPUInterface, size: IVec2, sim_params: SimParams, window: &Window) -> Self {
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -74,7 +81,7 @@ impl Renderer {
         let shader_src = WgslPreProcessor::load_and_process(shader_str, "./shaders").unwrap();
         let shader = gpu
             .device
-            .create_shader_module(&wgpu::ShaderModuleDescriptor {
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shader"),
                 source: wgpu::ShaderSource::Wgsl(shader_src.into()),
             });
@@ -159,12 +166,12 @@ impl Renderer {
                     // 3.
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[wgpu::ColorTargetState {
+                    targets: &[Some(wgpu::ColorTargetState {
                         // 4.
                         format: gpu.config.format,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    })],
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList, // 1.
@@ -204,6 +211,7 @@ impl Renderer {
                 });
         let num_indices = INDICES.len() as u32;
 
+        let gui = Gui::new(&gpu, &window);
         Self {
             render_pipeline,
             vertex_buffer,
@@ -213,6 +221,7 @@ impl Renderer {
             render_params_bind_group_layout: render_params_bind_group_layout,
             sampler,
             size,
+            gui,
         }
     }
 
@@ -226,13 +235,19 @@ impl Renderer {
         }
     }
 
+    pub fn handle_events(&mut self, event: &Event<()>) {
+        self.gui.handle_events(event);
+    }
+
     pub fn render(
         &mut self,
         gpu: &GPUInterface,
         totalistic: &Box<dyn Computer>,
         camera: &Camera,
+        window: &Window,
+        time: &Time,
+        output: SurfaceTexture,
     ) -> Result<(), wgpu::SurfaceError> {
-        let output = gpu.surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -301,19 +316,14 @@ impl Renderer {
                 label: Some("Render Pass"),
                 color_attachments: &[
                     // This is what [[location(0)]] in the fragment shader targets
-                    wgpu::RenderPassColorAttachment {
+                    Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
+                            load: wgpu::LoadOp::Load,
                             store: true,
                         },
-                    },
+                    }),
                 ],
                 depth_stencil_attachment: None,
             });
@@ -327,7 +337,10 @@ impl Renderer {
         }
 
         // submit will accept anything that implements IntoIter
-        gpu.queue.submit(std::iter::once(encoder.finish()));
+
+        self.gui.render(time, gpu, window, &output, &mut encoder);
+
+        gpu.queue.submit(iter::once(encoder.finish()));
         output.present();
 
         Ok(())

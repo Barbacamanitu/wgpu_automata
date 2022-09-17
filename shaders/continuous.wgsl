@@ -1,4 +1,13 @@
-#include("shader_tools.wgsl");
+fn get_pixel_wrap(pos: vec2<i32>, dims: vec2<i32>, tex: texture_2d<f32>) -> vec4<f32> {
+    let x = (pos.x + dims.x) %dims.x;
+    let y = (pos.y +  dims.y) %  dims.y;
+    let col: vec4<f32> = textureLoad(tex, vec2<i32>(x,y), 0);
+    return col;
+ }
+
+fn close(a: f32, b: i32) -> bool {
+    return abs(a - f32(b)) < 0.2;
+}
 
 fn inverse_gaussian(x: f32) -> f32 {
   return -1.0/pow(2., (0.6*pow(x, 2.)))+1.;
@@ -6,15 +15,15 @@ fn inverse_gaussian(x: f32) -> f32 {
 
 fn activation(x: f32) -> f32 {
   return inverse_gaussian(x);
-}		
+}
  
 
-[[group(0), binding(0)]] var input_texture : texture_2d<f32>;
-[[group(0), binding(1)]] var output_texture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var input_texture : texture_2d<f32>;
+@group(0) @binding(1)var output_texture : texture_storage_2d<rgba8unorm, write>;
 
-[[stage(compute), workgroup_size(16, 16)]]
+@compute @workgroup_size(16,16)
 fn main(
-  [[builtin(global_invocation_id)]] global_id : vec3<u32>,
+  @builtin(global_invocation_id) global_id : vec3<u32>,
 ) {
     let dimensions = textureDimensions(input_texture);
     let coords = vec2<i32>(global_id.xy);
@@ -47,13 +56,13 @@ fn main(
     let r_down  =  get_pixel_wrap(c_right_down,dimensions,input_texture).r;    
     let me_r = me.r;
 
-    let filter : array<f32, 9> = array<f32, 9>
-    (0.65, -0.9, 0.65, 
-    -0.9, -0.68, -0.9, 
-    0.72, -0.9, 0.71);
+    let conv_filter : array<f32, 9> = array<f32, 9>
+    (-0.61, 0.91, -0.65, 
+    0.9, 0.68, 0.9, 
+    -0.72, 0.9, -0.75);
 
-    let conv = filter[0] * l_up + filter[1] * up + filter[2] * r_up + filter[3] * left + filter[4] * me_r + filter[5] * right + filter[6] * l_down + filter[7] * down + filter[8] * r_down;
-    let val = activation(conv);
+    let conv = conv_filter[0] * l_up + conv_filter[1] * up + conv_filter[2] * r_up + conv_filter[3] * left + conv_filter[4] * me_r + conv_filter[5] * right + conv_filter[6] * l_down + conv_filter[7] * down + conv_filter[8] * r_down;
+    let val = clamp(activation(conv),0.0,1.0);
     var g = me.g;
     var b = me.b;
     if (val > 0.8 && g < 0.5) {

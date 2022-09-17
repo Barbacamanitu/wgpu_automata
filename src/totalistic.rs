@@ -72,7 +72,7 @@ impl Computer for Totalistic {
             });
             compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &compute_bind_group, &[]);
-            compute_pass.dispatch(dispatch_with, dispatch_height, 1);
+            compute_pass.dispatch_workgroups(dispatch_with, dispatch_height, 1);
         }
 
         gpu.queue.submit(Some(encoder.finish()));
@@ -95,7 +95,7 @@ impl Totalistic {
             WgslPreProcessor::load_and_process("totalistic.wgsl", shader_root).unwrap();
         let shader = gpu
             .device
-            .create_shader_module(&wgpu::ShaderModuleDescriptor {
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("totalistic shader"),
                 source: wgpu::ShaderSource::Wgsl(shader_src.into()),
             });

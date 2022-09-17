@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+wgpu = "0.13.1"
 winit = "0.26"
 env_logger = "0.9"
 log = "0.4"
-wgpu = "0.12"
 pollster = "0.2.5"
 cfg-if = "1"
 bytemuck = { version = "1.4", features = [ "derive" ] }
@@ -18,6 +18,12 @@ futures-intrusive = "0.4.0"
 rand = "0.8.5"
 regex = "1"
 cgmath = "0.18"
+egui_wgpu_backend = "0.18"
+chrono = "0.4"
+egui = "0.18"
+epi = "0.17"
+egui_winit_platform = "0.15"
+egui_demo_lib = "0.18"
 
 [dependencies.image]
 version = "0.24"
@@ -28,15 +34,3 @@ features = ["png", "jpeg"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.6"
-console_log = "0.2.0"
-wgpu = { version = "0.12", features = ["webgl"]}
-wasm-bindgen = "0.2.76"
-wasm-bindgen-futures = "0.4.30"
-web-sys = { version = "0.3.53", features = [
-    "Document",
-    "Window",
-    "Element",
-]}

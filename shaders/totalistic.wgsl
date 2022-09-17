@@ -3,15 +3,29 @@
  
 
  struct Rules {
-    born: array<u32, 8>;
-    stay_alive: array<u32,8>;
+    b0: u32,
+    b1: u32,
+    b2: u32,
+    b3: u32,
+    b4: u32,
+    b5: u32,
+    b6: u32,
+    b7: u32,
+    s0: u32,
+    s1: u32,
+    s2: u32,
+    s3: u32,
+    s4: u32,
+    s5: u32,
+    s6: u32,
+    s7: u32,
     
  };
 
 fn compute_cell(val: f32, sum: f32, rules: Rules) -> f32 {
    
-    var born = ( ((rules.born[0] == 1u) && close(sum,1)) || ((rules.born[1] == 1u) && close(sum,2)) || ((rules.born[2] == 1u) && close(sum,3)) || ((rules.born[3] == 1u) && close(sum,4)) || ((rules.born[4] == 1u) && close(sum,5)) || ((rules.born[5] == 1u) && close(sum,6))  || ((rules.born[6] == 1u) && close(sum,7)) || ((rules.born[7] == 1u) && close(sum,8))   );
-    var stay_alive = ( ((rules.stay_alive[0] == 1u) && close(sum,1)) || ((rules.stay_alive[1] == 1u) && close(sum,2)) || ((rules.stay_alive[2] == 1u) && close(sum,3)) || ((rules.stay_alive[3] == 1u) && close(sum,4)) || ((rules.stay_alive[4] == 1u) && close(sum,5)) || ((rules.stay_alive[5] == 1u) && close(sum,6))  || ((rules.stay_alive[6] == 1u) && close(sum,7)) || ((rules.stay_alive[7] == 1u) && close(sum,8))   );
+    var born = ( ((rules.b0 == 1u) && close(sum,1)) || ((rules.b1 == 1u) && close(sum,2)) || ((rules.b2  == 1u) && close(sum,3)) || ((rules.b3== 1u) && close(sum,4)) || ((rules.b4== 1u) && close(sum,5)) || ((rules.b5== 1u) && close(sum,6))  || ((rules.b6== 1u) && close(sum,7)) || ((rules.b7== 1u) && close(sum,8))   );
+    var stay_alive = ( ((rules.s0 == 1u) && close(sum,1)) || ((rules.s1== 1u) && close(sum,2)) || ((rules.s2== 1u) && close(sum,3)) || ((rules.s3== 1u) && close(sum,4)) || ((rules.s4== 1u) && close(sum,5)) || ((rules.s5== 1u) && close(sum,6))  || ((rules.s6== 1u) && close(sum,7)) || ((rules.s7== 1u) && close(sum,8))   );
 
 
     
@@ -25,13 +39,13 @@ fn compute_cell(val: f32, sum: f32, rules: Rules) -> f32 {
     return 0.0;
  }
 
-[[group(0), binding(0)]] var input_texture : texture_2d<f32>;
-[[group(0), binding(1)]] var output_texture : texture_storage_2d<rgba8unorm, write>;
-[[group(0), binding(2)]] var<uniform> rules : Rules;
+@group(0) @binding(0) var input_texture : texture_2d<f32>;
+@group(0) @binding(1) var output_texture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<uniform> rules : Rules;
 
-[[stage(compute), workgroup_size(16, 16)]]
+@compute @workgroup_size(16, 16)
 fn totalistic_main(
-  [[builtin(global_invocation_id)]] global_id : vec3<u32>,
+  @builtin(global_invocation_id) global_id : vec3<u32>,
 ) {
     let dimensions = textureDimensions(input_texture);
     let coords = vec2<i32>(global_id.xy);

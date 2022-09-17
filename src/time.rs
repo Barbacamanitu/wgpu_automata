@@ -11,6 +11,7 @@ pub struct Time {
     frame_since_last_fps_check: u32,
     updates_since_last_fps_check: u32,
     updates_this_frame: u32,
+    start_time: Instant,
 }
 
 pub struct FPSData {
@@ -36,7 +37,12 @@ impl Time {
             updates_this_frame: 0,
             update_delay,
             last_update: Instant::now(),
+            start_time: Instant::now(),
         }
+    }
+
+    pub fn get_elapsed(&self) -> Duration {
+        self.start_time.elapsed()
     }
 
     //Returns None if not enough time has passed since the last FPS check. *

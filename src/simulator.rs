@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use wgpu::SurfaceTexture;
 use winit::{
     event::{MouseButton, WindowEvent},
     window::Window,
@@ -55,7 +56,7 @@ impl Simulator {
             SimParams::Continuous => Box::new(Continuous::new(&gpu, &input_image)),
         };
 
-        let renderer = Renderer::new(&gpu, renderer_size, sim_params);
+        let renderer = Renderer::new(&gpu, renderer_size, sim_params, window);
 
         let camera = Camera::new();
         Simulator {
@@ -75,8 +76,19 @@ impl Simulator {
         }
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let rend_result = self.renderer.render(&self.gpu, &self.sim, &self.camera);
+    pub fn render(
+        &mut self,
+        window: &Window,
+        output: SurfaceTexture,
+    ) -> Result<(), wgpu::SurfaceError> {
+        let rend_result = self.renderer.render(
+            &self.gpu,
+            &self.sim,
+            &self.camera,
+            window,
+            &self.time,
+            output,
+        );
         if rend_result.is_err() {
             return rend_result;
         }

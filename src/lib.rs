@@ -7,6 +7,7 @@ mod camera;
 mod computer;
 mod continuous;
 mod gpu_interface;
+mod gui;
 mod image_util;
 mod math;
 mod renderer;
@@ -24,54 +25,11 @@ use winit::{
 };
 
 use crate::{
-    gpu_interface::GPUInterface,
     math::IVec2,
-    renderer::Renderer,
     rule::Rule,
     simulator::{SimParams, Simulator},
     time::Time,
-    totalistic::Totalistic,
 };
-
-// main.rs
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2], // NEW!
-}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2, // NEW!
-                },
-            ],
-        }
-    }
-}
-
-// main.rs
-// Changed
-
-unsafe impl bytemuck::Pod for Vertex {}
-unsafe impl bytemuck::Zeroable for Vertex {}
-
-pub fn test() {
-    println!("tset");
-}
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
@@ -130,50 +88,56 @@ pub async fn run() {
             .expect("Couldn't append canvas to document body.");
     }
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => {
-            if !sim.input(event) {
-                match event {
-                    WindowEvent::Resized(physical_size) => {
-                        sim.resize(*physical_size);
+    event_loop.run(move |event, _, control_flow| {
+        sim.renderer.handle_events(&event);
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
+                //.Handle gui events
+
+                if !sim.input(event) {
+                    match event {
+                        WindowEvent::Resized(physical_size) => {
+                            sim.resize(*physical_size);
+                        }
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            // new_inner_size is &&mut so we have to dereference it twice
+                            sim.resize(**new_inner_size);
+                        }
+                        WindowEvent::CloseRequested
+                        | WindowEvent::KeyboardInput {
+                            input:
+                                KeyboardInput {
+                                    state: ElementState::Pressed,
+                                    virtual_keycode: Some(VirtualKeyCode::Escape),
+                                    ..
+                                },
+                            ..
+                        } => *control_flow = ControlFlow::Exit,
+                        _ => {}
                     }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        // new_inner_size is &&mut so we have to dereference it twice
-                        sim.resize(**new_inner_size);
-                    }
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    _ => {}
                 }
             }
-        }
-        Event::RedrawRequested(window_id) if window_id == window.id() => {
-            match sim.render() {
-                Ok(_) => {}
-                // Reconfigure the surface if lost
-                Err(wgpu::SurfaceError::Lost) => sim.resize(sim.gpu.size),
-                // The system is out of memory, we should probably quit
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                // All other errors (Outdated, Timeout) should be resolved by the next frame
-                Err(e) => eprintln!("{:?}", e),
+            Event::RedrawRequested(window_id) if window_id == window.id() => {
+                let output = sim.gpu.surface.get_current_texture().unwrap();
+                match sim.render(&window, output) {
+                    Ok(_) => {}
+                    // Reconfigure the surface if lost
+                    Err(wgpu::SurfaceError::Lost) => sim.resize(sim.gpu.size),
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    // All other errors (Outdated, Timeout) should be resolved by the next frame
+                    Err(e) => eprintln!("{:?}", e),
+                }
             }
+            Event::MainEventsCleared => {
+                // RedrawRequested will only trigger once, unless we manually
+                // request it.
+                window.request_redraw();
+            }
+            _ => {}
         }
-        Event::MainEventsCleared => {
-            // RedrawRequested will only trigger once, unless we manually
-            // request it.
-            window.request_redraw();
-        }
-        _ => {}
     });
 }

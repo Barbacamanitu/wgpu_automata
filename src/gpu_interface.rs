@@ -21,7 +21,7 @@ impl GPUInterface {
             .enumerate_adapters(wgpu::Backends::all())
             .filter(|adapter| {
                 // Check if this adapter supports our surface
-                surface.get_preferred_format(&adapter).is_some()
+                surface.get_supported_formats(&adapter).len() > 0
             })
             .next()
             .unwrap();
@@ -45,7 +45,7 @@ impl GPUInterface {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_preferred_format(&adapter).unwrap(),
+            format: surface.get_supported_formats(&adapter)[0],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
