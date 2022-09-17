@@ -1,19 +1,32 @@
 use std::time::Duration;
 
+pub mod camera;
+pub mod continuous;
+pub mod gpu_interface;
+pub mod gui;
+pub mod image_util;
+pub mod math;
+pub mod renderer;
+pub mod rule;
+pub mod simulator;
+pub mod time;
+pub mod totalistic;
+pub mod wgsl_preproc;
+
 use wgpu::SurfaceTexture;
 use winit::{
     event::{MouseButton, WindowEvent},
     window::Window,
 };
 
-use crate::{
+use self::{
     camera::Camera,
-    computer::Computer,
     continuous::Continuous,
     gpu_interface::GPUInterface,
     math::{FVec3, IVec2},
     renderer::Renderer,
     rule::Rule,
+    simulator::Simulator,
     time::Time,
     totalistic::Totalistic,
 };
@@ -25,33 +38,33 @@ pub enum SimParams {
     Continuous,
 }
 
-pub struct Simulator {
+pub struct App {
     pub gpu: GPUInterface,
     pub renderer: Renderer,
     camera: Camera,
     time: Time,
-    sim: Box<dyn Computer>,
+    sim: Box<dyn Simulator>,
     mouse_down: bool,
     mouse_drag_pos: FVec3,
     mouse_drag_start: bool,
     latest_mouse_pos: FVec3,
 }
 
-impl Simulator {
+impl App {
     pub fn new(
         renderer_size: IVec2,
         sim_params: SimParams,
         window: &Window,
         input_image: ImageType,
         time: Time,
-    ) -> Simulator {
-        let gpu: GPUInterface = pollster::block_on(GPUInterface::new(&window));
+    ) -> App {
+        let gpu: GPUInterface = GPUInterface::new(&window);
         /*let input_image = image::load_from_memory(include_bytes!("gol1.png"))
             .unwrap()
             .to_rgba8();
         //let input_image = Totalistic::random_image(width, height);*/
 
-        let sim: Box<dyn Computer> = match sim_params {
+        let sim: Box<dyn Simulator> = match sim_params {
             SimParams::Totalistic(rule) => Box::new(Totalistic::new(&gpu, &input_image, rule)),
             SimParams::Continuous => Box::new(Continuous::new(&gpu, &input_image)),
         };
@@ -59,7 +72,7 @@ impl Simulator {
         let renderer = Renderer::new(&gpu, renderer_size, sim_params, window);
 
         let camera = Camera::new();
-        Simulator {
+        App {
             gpu,
             renderer,
             time,
@@ -76,40 +89,40 @@ impl Simulator {
         }
     }
 
-    pub fn render(
-        &mut self,
-        window: &Window,
-        output: SurfaceTexture,
-    ) -> Result<(), wgpu::SurfaceError> {
-        let rend_result = self.renderer.render(
-            &self.gpu,
-            &self.sim,
-            &self.camera,
-            window,
-            &self.time,
-            output,
-        );
+    pub fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        let rend_result =
+            self.renderer
+                .render(&self.gpu, &self.sim, &self.camera, window, &self.time);
         if rend_result.is_err() {
             return rend_result;
         }
 
         self.time.render_tick();
+        match self.time.get_fps() {
+            Some(fps) => {
+                println!("FPS: {}, Updates/Sec: {}", fps.render_fps, fps.update_fps);
+                let sim_state = self.sim.get_simulation_state_mut();
+                sim_state.fps = fps.render_fps as u32;
+                sim_state.ups = fps.update_fps as u32;
+            }
+            None => {}
+        }
 
-        while self.time.can_update() {
+        //Sync gui sim state to real sim state
+        self.sim.sync_state_from_gui(&mut self.renderer);
+        while self.time.can_update() && !self.sim.get_simulation_state_mut().paused {
             self.sim.step(&self.gpu);
             self.time.update_tick();
         }
 
-        match self.time.get_fps() {
-            Some(fps) => {
-                println!("FPS: {}, Updates/Sec: {}", fps.render_fps, fps.update_fps);
-            }
-            None => {}
-        }
         Ok(())
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
+        if (self.renderer.gui.is_handling_input()) {
+            self.mouseup();
+            return true;
+        }
         let movement: f32 = 1.0;
         match event {
             WindowEvent::KeyboardInput {
@@ -181,15 +194,13 @@ impl Simulator {
             } => match state {
                 winit::event::ElementState::Pressed => match button {
                     MouseButton::Left => {
-                        self.mouse_down = true;
-                        self.mouse_drag_start = true;
-                        self.mouse_drag_pos = self.latest_mouse_pos;
+                        self.mousedown();
                     }
                     _ => {}
                 },
                 winit::event::ElementState::Released => match button {
                     MouseButton::Left => {
-                        self.mouse_down = false;
+                        self.mouseup();
                     }
                     _ => {}
                 },
@@ -201,5 +212,15 @@ impl Simulator {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.renderer.resize(new_size, &mut self.gpu);
+    }
+
+    fn mouseup(&mut self) {
+        self.mouse_down = false;
+    }
+
+    fn mousedown(&mut self) {
+        self.mouse_down = true;
+        self.mouse_drag_start = true;
+        self.mouse_drag_pos = self.latest_mouse_pos;
     }
 }

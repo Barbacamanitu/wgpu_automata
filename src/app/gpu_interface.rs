@@ -9,7 +9,7 @@ pub struct GPUInterface {
 }
 
 impl GPUInterface {
-    pub async fn new(window: &Window) -> GPUInterface {
+    pub fn new(window: &Window) -> GPUInterface {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -25,23 +25,21 @@ impl GPUInterface {
             })
             .next()
             .unwrap();
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
-                    limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                    label: None,
+        let (device, queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                features: wgpu::Features::empty(),
+                // WebGL doesn't support all of wgpu's features, so if
+                // we're building for the web we'll have to disable some.
+                limits: if cfg!(target_arch = "wasm32") {
+                    wgpu::Limits::downlevel_webgl2_defaults()
+                } else {
+                    wgpu::Limits::default()
                 },
-                None, // Trace path
-            )
-            .await
-            .unwrap();
+                label: None,
+            },
+            None, // Trace path
+        ))
+        .unwrap();
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

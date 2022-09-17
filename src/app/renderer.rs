@@ -1,15 +1,15 @@
 use std::iter;
 
-use crate::{
+use super::{
     camera::{self, Camera},
-    computer::Computer,
     gpu_interface::GPUInterface,
     gui::Gui,
     math::{IVec2, Vertex},
-    simulator::SimParams,
+    simulator::Simulator,
     time::Time,
     totalistic::Totalistic,
     wgsl_preproc::WgslPreProcessor,
+    SimParams,
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::DeviceExt, Buffer, SurfaceTexture};
@@ -239,15 +239,15 @@ impl Renderer {
         self.gui.handle_events(event);
     }
 
-    pub fn render(
+    fn render_sim(
         &mut self,
         gpu: &GPUInterface,
-        totalistic: &Box<dyn Computer>,
+        totalistic: &Box<dyn Simulator>,
         camera: &Camera,
         window: &Window,
         time: &Time,
-        output: SurfaceTexture,
-    ) -> Result<(), wgpu::SurfaceError> {
+        output: &wgpu::SurfaceTexture,
+    ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -335,12 +335,26 @@ impl Renderer {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
+        Ok(encoder.finish())
+    }
 
+    pub fn render(
+        &mut self,
+        gpu: &GPUInterface,
+        totalistic: &Box<dyn Simulator>,
+        camera: &Camera,
+        window: &Window,
+        time: &Time,
+    ) -> Result<(), wgpu::SurfaceError> {
         // submit will accept anything that implements IntoIter
+        let output = gpu.surface.get_current_texture().unwrap();
+        let sim_render_command_buffer = self
+            .render_sim(gpu, totalistic, camera, window, time, &output)
+            .unwrap();
+        let gui_render_command_buffer = self.gui.render(time, gpu, window, &output);
 
-        self.gui.render(time, gpu, window, &output, &mut encoder);
-
-        gpu.queue.submit(iter::once(encoder.finish()));
+        gpu.queue
+            .submit([sim_render_command_buffer, gui_render_command_buffer]);
         output.present();
 
         Ok(())

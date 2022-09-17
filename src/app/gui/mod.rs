@@ -9,17 +9,26 @@ use winit::{
     window::Window,
 };
 
-use crate::{gpu_interface::GPUInterface, time::Time};
+use super::{gpu_interface::GPUInterface, simulator::SimulationState, time::Time};
 
 use self::gui_window::GuiWindow;
 
 pub struct Gui {
     platform: Platform,
     render_pass: RenderPass,
-    demo: GuiWindow,
+    gui_window: GuiWindow,
 }
 
 impl Gui {
+    pub fn is_handling_input(&self) -> bool {
+        let ctx = self.platform.context();
+        ctx.is_using_pointer() || ctx.wants_keyboard_input()
+    }
+
+    pub fn get_simulation_state_mut(&mut self) -> &mut SimulationState {
+        &mut self.gui_window.sim_state
+    }
+
     pub fn new(gpu: &GPUInterface, window: &Window) -> Gui {
         let size = window.inner_size();
         let platform = Platform::new(PlatformDescriptor {
@@ -34,11 +43,11 @@ impl Gui {
         let egui_rpass = RenderPass::new(&gpu.device, gpu.config.format, 1);
 
         // Display the demo application that ships with egui.
-        let demo_app = GuiWindow::new();
+        let gui_window = GuiWindow::new();
         Gui {
             platform,
             render_pass: egui_rpass,
-            demo: demo_app,
+            gui_window: gui_window,
         }
     }
 
@@ -51,13 +60,15 @@ impl Gui {
         time: &Time,
         gpu: &GPUInterface,
         window: &Window,
-        output: &SurfaceTexture,
-        encoder: &mut CommandEncoder,
-    ) {
+        output: &wgpu::SurfaceTexture,
+    ) -> wgpu::CommandBuffer {
         self.platform.update_time(time.get_elapsed().as_secs_f64());
-
-        let output_frame = output;
-        let output_view = output_frame
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Gui Render Encoder"),
+            });
+        let output_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -65,7 +76,7 @@ impl Gui {
         self.platform.begin_frame();
 
         // Draw the demo application.
-        self.demo.ui(&self.platform.context());
+        self.gui_window.ui(&self.platform.context());
 
         // End the UI frame. We could now handle the output and draw the UI with the backend.
         let full_output = self.platform.end_frame(Some(window));
@@ -86,21 +97,14 @@ impl Gui {
 
         // Record all render passes.
         self.render_pass
-            .execute(encoder, &output_view, &paint_jobs, &screen_descriptor, None)
+            .execute(
+                &mut encoder,
+                &output_view,
+                &paint_jobs,
+                &screen_descriptor,
+                None,
+            )
             .unwrap();
-        // Submit the commands.
-
-        // Redraw egui
-
-        /*self.render_pass
-        .remove_textures(tdelta)
-        .expect("remove texture ok");*/
-
-        // Suppport reactive on windows only, but not on linux.
-        // if _output.needs_repaint {
-        //     *control_flow = ControlFlow::Poll;
-        // } else {
-        //     *control_flow = ControlFlow::Wait;
-        // }
+        encoder.finish()
     }
 }

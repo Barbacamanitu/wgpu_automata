@@ -29,8 +29,3 @@ egui_demo_lib = "0.18"
 version = "0.24"
 default-features = false
 features = ["png", "jpeg"]
-
-
-
-[lib]
-crate-type = ["cdylib", "rlib"]
