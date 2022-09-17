@@ -81,6 +81,7 @@ impl Simulator for Totalistic {
 
         gpu.queue.submit(Some(encoder.finish()));
         self.current_frame += 1;
+        self.get_simulation_state_mut().generations = self.current_frame;
     }
 
     fn get_size(&self) -> IVec2 {

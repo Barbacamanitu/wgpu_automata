@@ -33,6 +33,7 @@ impl GuiWindow {
                     "FPS: {}, Updates/Sec: {}",
                     self.sim_state.fps, self.sim_state.ups
                 ));
+                ui.label(format!("Generation: {}", self.sim_state.generations));
             });
     }
 }

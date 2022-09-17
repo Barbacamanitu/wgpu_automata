@@ -7,6 +7,7 @@ pub struct SimulationState {
     pub fps: u32,
     //Updates per second
     pub ups: u32,
+    pub generations: usize,
 }
 
 impl Default for SimulationState {
@@ -15,6 +16,7 @@ impl Default for SimulationState {
             paused: false,
             fps: 0,
             ups: 0,
+            generations: 0,
         }
     }
 }
@@ -66,5 +68,6 @@ pub trait Simulator {
         sim_state.paused = gui_sim_state.paused;
         gui_sim_state.fps = sim_state.fps;
         gui_sim_state.ups = sim_state.ups;
+        gui_sim_state.generations = sim_state.generations;
     }
 }
