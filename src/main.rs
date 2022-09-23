@@ -1,6 +1,13 @@
 mod app;
-
-use app::{image_util, math::IVec2, rule::Rule, time::Time};
+mod renderer;
+use app::{
+    gpu_interface::GPUInterface,
+    math::{IVec2, UVec2},
+    sim_renderer::RendererType,
+    time::Time,
+    totalistic::TotalisticParams,
+};
+use renderer::Renderer;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::*,
@@ -8,7 +15,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use crate::app::{App, SimParams};
 
@@ -17,7 +24,8 @@ fn main() {
 }
 
 async fn run() {
-    let renderer_size = IVec2::new(1920, 1080);
+    let renderer_size = IVec2::new(1024, 1024);
+    let sim_size = UVec2::new(2048, 2048);
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_inner_size(PhysicalSize::new(renderer_size.x, renderer_size.y))
@@ -25,28 +33,25 @@ async fn run() {
         .with_position(PhysicalPosition::new(0, 0))
         .build(&event_loop)
         .unwrap();
-    /*(let input_image = image::load_from_memory(include_bytes!("gol1.png"))
-    .unwrap()
-    .into_rgba8();*/
+    let mut gpu = GPUInterface::new(&window);
 
-    let input_image = image_util::ImageUtil::random_image_color(1920 / 2, 1080 / 2);
+    let mut renderer = Renderer::new(&gpu, renderer_size, RendererType::Totalistic, &window);
+
+    let params = SimParams::Totalistic(TotalisticParams {
+        size: sim_size,
+        rule_str: "B3/S23".to_owned(),
+    });
+
     let time = Time::new(
-        10,
+        1,
         Duration::from_secs(1),
         Duration::from_millis(10),
-        Duration::from_millis(0),
-    );
-    let rule: Rule = Rule::from_rule_str("B3/S23").unwrap();
-    let mut sim: App = App::new(
-        renderer_size,
-        SimParams::Totalistic(rule),
-        &window,
-        input_image,
-        time,
+        Duration::from_millis(32),
     );
 
+    let mut app: App = App::new(params.clone(), time, &gpu);
     event_loop.run(move |event, _, control_flow| {
-        sim.renderer.handle_events(&event);
+        renderer.get_gui_mut().handle_events(&event);
         match event {
             Event::WindowEvent {
                 ref event,
@@ -54,34 +59,33 @@ async fn run() {
             } if window_id == window.id() => {
                 //.Handle gui events
 
-                if !sim.input(event) {
-                    match event {
-                        WindowEvent::Resized(physical_size) => {
-                            sim.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &&mut so we have to dereference it twice
-                            sim.resize(**new_inner_size);
-                        }
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        _ => {}
+                app.handle_input(event, renderer.get_gui(), &renderer);
+                match event {
+                    WindowEvent::Resized(physical_size) => {
+                        renderer.resize(*physical_size, &mut gpu);
                     }
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        // new_inner_size is &&mut so we have to dereference it twice
+                        renderer.resize(**new_inner_size, &mut gpu);
+                    }
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    _ => {}
                 }
             }
             Event::RedrawRequested(window_id) if window_id == window.id() => {
-                match sim.render(&window) {
+                match renderer.render(&gpu, &mut app, &window) {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => sim.resize(sim.gpu.size),
+                    Err(wgpu::SurfaceError::Lost) => renderer.resize(gpu.size, &mut gpu),
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // All other errors (Outdated, Timeout) should be resolved by the next frame

@@ -6,7 +6,6 @@ pub struct WgslPreProcessor {}
 pub enum PreProcessError {
     FileNotFound(String),
     FileReadError(String),
-    Other(String),
 }
 
 impl WgslPreProcessor {
@@ -19,7 +18,7 @@ impl WgslPreProcessor {
             let filename = cap[1].to_owned();
             let file_path = root.join(filename);
             let repl = cap[0].to_owned();
-            if (!file_path.exists()) {
+            if !file_path.exists() {
                 return Err(PreProcessError::FileNotFound(format!(
                     "Couldn't find file: {}",
                     cap[1].to_owned()
@@ -43,7 +42,7 @@ impl WgslPreProcessor {
         let root = PathBuf::from_str(shader_root).unwrap();
         match fs::read_to_string(root.join(file)) {
             Ok(contents) => WgslPreProcessor::preprocess(contents.as_str(), shader_root),
-            Err(e) => Err(PreProcessError::FileNotFound(format!(
+            Err(_e) => Err(PreProcessError::FileNotFound(format!(
                 "Couldn't read file: {}",
                 file.to_owned()
             ))),

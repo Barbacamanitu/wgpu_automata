@@ -1,36 +1,84 @@
 use std::any::Any;
 
+use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use super::{
     gpu_interface::GPUInterface,
     image_util::ImageUtil,
     math::{IVec2, UVec2},
-    rule::Rule,
     simulator::{SimulationState, Simulator},
     wgsl_preproc::WgslPreProcessor,
 };
 
-#[derive(Debug)]
-pub enum TotalisticCreationError {
-    RuleError,
-}
-#[derive(Clone)]
-pub struct TotalisticParams {
-    pub size: UVec2,
-    pub rule_str: String,
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+pub struct NeuralFilterBuffer {
+    w0: f32,
+    w1: f32,
+    w2: f32,
+    w3: f32,
+    w4: f32,
+    w5: f32,
+    w6: f32,
+    w7: f32,
+    w8: f32,
 }
 
-pub struct Totalistic {
+#[derive(Clone, Copy)]
+pub struct NeuralFilter {
+    pub weights: [f32; 9],
+}
+
+impl Default for NeuralFilter {
+    fn default() -> Self {
+        Self {
+            weights: [-0.72, 0.90, -0.68, 0.92, 0.68, 0.91, -0.68, 0.9, -0.72],
+        }
+    }
+}
+
+impl NeuralFilter {
+    pub fn to_buffer(&self) -> NeuralFilterBuffer {
+        NeuralFilterBuffer {
+            w0: self.weights[0],
+            w1: self.weights[1],
+            w2: self.weights[2],
+            w3: self.weights[3],
+            w4: self.weights[4],
+            w5: self.weights[5],
+            w6: self.weights[6],
+            w7: self.weights[7],
+            w8: self.weights[8],
+        }
+    }
+
+    pub fn from_slice(s: &[f32; 9]) -> NeuralFilter {
+        NeuralFilter { weights: *s }
+    }
+}
+
+#[derive(Clone)]
+pub struct NeuralParams {
+    pub size: UVec2,
+    pub filter: NeuralFilter,
+}
+
+#[derive(Debug)]
+pub enum NeuralCreationError {
+    ShaderError,
+}
+
+pub struct Neural {
     compute_pipeline: wgpu::ComputePipeline,
     textures: [wgpu::Texture; 2],
     current_frame: usize,
-    rules: Rule,
     pub size: IVec2,
     sim_state: SimulationState,
+    filter: NeuralFilter,
 }
 
-impl Simulator for Totalistic {
+impl Simulator for Neural {
     fn get_current_frame(&self) -> usize {
         self.current_frame
     }
@@ -45,11 +93,11 @@ impl Simulator for Totalistic {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let rules_buffer = gpu
+        let filter_buffer = gpu
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Rules"),
-                contents: bytemuck::bytes_of(&self.rules),
+                label: Some("filter Buffer"),
+                contents: bytemuck::bytes_of(&self.filter.to_buffer()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
@@ -71,7 +119,7 @@ impl Simulator for Totalistic {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: rules_buffer.as_entire_binding(),
+                    resource: filter_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -97,6 +145,31 @@ impl Simulator for Totalistic {
         self.size
     }
 
+    fn get_read_write(&self) -> (usize, usize) {
+        let mut read = 0;
+        let mut write = 1;
+        if self.get_current_frame() % 2 == 1 {
+            read = 1;
+            write = 0;
+        }
+        (read, write)
+    }
+
+    fn get_current_texture(&self) -> &wgpu::Texture {
+        &self.get_textures()[self.get_read_write().1]
+    }
+
+    fn compute_work_group_count(
+        &self,
+        (width, height): (u32, u32),
+        (workgroup_width, workgroup_height): (u32, u32),
+    ) -> (u32, u32) {
+        let x = (width + workgroup_width - 1) / workgroup_width;
+        let y = (height + workgroup_height - 1) / workgroup_height;
+
+        (x, y)
+    }
+
     fn get_simulation_state_mut(&mut self) -> &mut super::simulator::SimulationState {
         &mut self.sim_state
     }
@@ -106,34 +179,29 @@ impl Simulator for Totalistic {
     }
 }
 
-impl Totalistic {
-    pub fn new(
-        gpu: &GPUInterface,
-        params: TotalisticParams,
-    ) -> Result<Totalistic, TotalisticCreationError> {
-        let rule_create = Rule::from_rule_str(&params.rule_str.as_str());
-        let input_image = ImageUtil::random_image_monochrome(params.size.x, params.size.y);
-        match rule_create {
-            Ok(rule) => {
-                let shader_root = "./shaders";
-                let shader_src =
-                    WgslPreProcessor::load_and_process("totalistic.wgsl", shader_root).unwrap();
+impl Neural {
+    pub fn new(gpu: &GPUInterface, params: NeuralParams) -> Result<Neural, NeuralCreationError> {
+        let shader_root = "./shaders";
+        let shader_process = WgslPreProcessor::load_and_process("neural.wgsl", shader_root);
+        match shader_process {
+            Ok(shader_src) => {
                 let shader = gpu
                     .device
                     .create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some("totalistic shader"),
+                        label: Some("Neural shader"),
                         source: wgpu::ShaderSource::Wgsl(shader_src.into()),
                     });
 
                 let pipeline =
                     gpu.device
                         .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                            label: Some("Totalistic compute pipeline"),
+                            label: Some("Neural compute pipeline"),
                             layout: None,
                             module: &shader,
-                            entry_point: "totalistic_main",
+                            entry_point: "main",
                         });
 
+                let input_image = ImageUtil::random_image_color(params.size.x, params.size.y);
                 let (width, height) = input_image.dimensions();
 
                 let texture_size = wgpu::Extent3d {
@@ -179,18 +247,21 @@ impl Totalistic {
                 );
 
                 let img_dims = input_image.dimensions();
-
-                Ok(Totalistic {
+                Ok(Neural {
                     compute_pipeline: pipeline,
                     textures: [input_texture, output_texture],
 
                     current_frame: 0,
-                    rules: rule,
                     size: IVec2::new(img_dims.0 as i32, img_dims.1 as i32),
                     sim_state: SimulationState::default(),
+                    filter: params.filter,
                 })
             }
-            Err(_err) => Err(TotalisticCreationError::RuleError),
+            Err(preproc_err) => Err(NeuralCreationError::ShaderError),
         }
+    }
+
+    pub fn set_filter(&mut self, filter: NeuralFilter) {
+        self.filter = filter;
     }
 }

@@ -1,36 +1,29 @@
-use std::iter;
+use std::collections::HashMap;
 
-use super::{
-    camera::{self, Camera},
+use crate::app::{
     gpu_interface::GPUInterface,
-    gui::Gui,
     math::{IVec2, Vertex},
-    simulator::Simulator,
-    time::Time,
-    totalistic::Totalistic,
     wgsl_preproc::WgslPreProcessor,
-    SimParams,
+    App,
 };
+
 use bytemuck::{Pod, Zeroable};
-use wgpu::{util::DeviceExt, Buffer, SurfaceTexture};
+use wgpu::{util::DeviceExt, Buffer};
 
-// main.rs
+#[derive(PartialEq, Eq, Hash)]
+pub enum RendererType {
+    Totalistic,
+    Neural,
+}
 
-use winit::{
-    event::{Event, WindowEvent},
-    window::Window,
-};
-
-pub struct Renderer {
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    pub render_params_bind_group_layout: wgpu::BindGroupLayout,
+pub struct SimulationRenderer {
+    pub render_pipelines: HashMap<RendererType, wgpu::RenderPipeline>,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
     pub sampler: wgpu::Sampler,
     pub size: IVec2,
-    pub gui: Gui,
+    renderer_type: RendererType,
 }
 
 #[repr(C)]
@@ -60,32 +53,8 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
-impl Renderer {
-    // Creating some of the wgpu types requires async code
-    pub fn new(gpu: &GPUInterface, size: IVec2, sim_params: SimParams, window: &Window) -> Self {
-        let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let shader_str = match sim_params {
-            SimParams::Totalistic(_) => "render.wgsl",
-            SimParams::Continuous => "render_continuous.wgsl",
-        };
-
-        let shader_src = WgslPreProcessor::load_and_process(shader_str, "./shaders").unwrap();
-        let shader = gpu
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
-            });
-
+impl SimulationRenderer {
+    fn create_pipeline(shader: &wgpu::ShaderModule, gpu: &GPUInterface) -> wgpu::RenderPipeline {
         let texture_bind_group_layout =
             gpu.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -109,7 +78,7 @@ impl Renderer {
                             count: None,
                         },
                     ],
-                    label: Some("Renderer_texture_bind_group_layout"),
+                    label: Some("SimulationRenderer_texture_bind_group_layout"),
                 });
 
         let render_params_bind_group_layout =
@@ -137,7 +106,7 @@ impl Renderer {
                             count: None,
                         },
                     ],
-                    label: Some("camera_bind_group_layout"),
+                    label: Some("render_params_bind_group_layout"),
                 });
 
         let render_pipeline_layout =
@@ -158,12 +127,11 @@ impl Renderer {
                 label: Some("Render Pipeline"),
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",     // 1.
-                    buffers: &[Vertex::desc()], // 2.
+                    module: shader,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::desc()],
                 },
                 fragment: Some(wgpu::FragmentState {
-                    // 3.
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
@@ -193,6 +161,38 @@ impl Renderer {
                 },
                 multiview: None, // 5.
             });
+        render_pipeline
+    }
+
+    pub fn new(gpu: &GPUInterface, size: IVec2, r_type: RendererType) -> Self {
+        let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let shader_types = vec![RendererType::Totalistic, RendererType::Neural];
+        let mut pipeline_map: HashMap<RendererType, wgpu::RenderPipeline> = HashMap::new();
+        for s in shader_types {
+            let shader_str = match s {
+                RendererType::Totalistic => "totalistic_render.wgsl",
+                RendererType::Neural => "neural_render.wgsl",
+            };
+
+            let shader_src = WgslPreProcessor::load_and_process(shader_str, "./shaders").unwrap();
+            let shader = gpu
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("Shader"),
+                    source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+                });
+            let pipeline = SimulationRenderer::create_pipeline(&shader, gpu);
+            pipeline_map.insert(s, pipeline);
+        }
 
         let vertex_buffer = gpu
             .device
@@ -211,41 +211,33 @@ impl Renderer {
                 });
         let num_indices = INDICES.len() as u32;
 
-        let gui = Gui::new(&gpu, &window);
         Self {
-            render_pipeline,
             vertex_buffer,
             index_buffer,
             num_indices,
-            texture_bind_group_layout: texture_bind_group_layout,
-            render_params_bind_group_layout: render_params_bind_group_layout,
             sampler,
             size,
-            gui,
+            render_pipelines: pipeline_map,
+            renderer_type: r_type,
         }
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, gpu: &mut GPUInterface) {
-        if new_size.width > 0 && new_size.height > 0 {
-            gpu.size = new_size;
-            gpu.config.width = new_size.width;
-            gpu.config.height = new_size.height;
-            gpu.surface.configure(&gpu.device, &gpu.config);
-            self.size = IVec2::new(new_size.width as i32, new_size.height as i32);
-        }
+    pub fn set_renderer_type(&mut self, r_type: RendererType) {
+        self.renderer_type = r_type;
     }
 
-    pub fn handle_events(&mut self, event: &Event<()>) {
-        self.gui.handle_events(event);
+    pub fn resize(&mut self, new_size: IVec2) {
+        self.size = new_size;
     }
 
-    fn render_sim(
+    fn get_pipeline(&self) -> &wgpu::RenderPipeline {
+        &self.render_pipelines[&self.renderer_type]
+    }
+
+    fn render_simulation(
         &mut self,
         gpu: &GPUInterface,
-        totalistic: &Box<dyn Simulator>,
-        camera: &Camera,
-        window: &Window,
-        time: &Time,
+        app: &mut App,
         output: &wgpu::SurfaceTexture,
     ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
         let view = output
@@ -257,9 +249,9 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        let render_tex = totalistic.get_current_texture();
+        let render_tex = app.sim.get_current_texture();
         let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &&self.texture_bind_group_layout,
+            layout: &self.get_pipeline().get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -279,24 +271,25 @@ impl Renderer {
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Buffer"),
-                contents: bytemuck::bytes_of(camera),
+                contents: bytemuck::bytes_of(&app.camera.to_buffer()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
         let r_params = RenderParams {
             window_size: self.size.as_slice(),
-            sim_size: totalistic.get_size().as_slice(),
+            sim_size: app.sim.get_size().as_slice(),
         };
+        //println!("Render params: {:?}", r_params);
         let render_params_buffer =
             gpu.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Camera Buffer"),
+                    label: Some("Render Params Buffer"),
                     contents: bytemuck::bytes_of(&r_params),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
         let render_params_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.render_params_bind_group_layout,
+            layout: &self.get_pipeline().get_bind_group_layout(1),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -328,7 +321,7 @@ impl Renderer {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.get_pipeline());
             render_pass.set_bind_group(0, &texture_bind_group, &[]);
             render_pass.set_bind_group(1, &render_params_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -341,22 +334,34 @@ impl Renderer {
     pub fn render(
         &mut self,
         gpu: &GPUInterface,
-        totalistic: &Box<dyn Simulator>,
-        camera: &Camera,
-        window: &Window,
-        time: &Time,
-    ) -> Result<(), wgpu::SurfaceError> {
+        app: &mut App,
+        output: &wgpu::SurfaceTexture,
+    ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
         // submit will accept anything that implements IntoIter
-        let output = gpu.surface.get_current_texture().unwrap();
-        let sim_render_command_buffer = self
-            .render_sim(gpu, totalistic, camera, window, time, &output)
-            .unwrap();
-        let gui_render_command_buffer = self.gui.render(time, gpu, window, &output);
+        let sim_render_result = self.render_simulation(gpu, app, output);
+        match sim_render_result {
+            Ok(sim_render_command_buffer) => {
+                app.time.render_tick();
+                match app.time.get_fps() {
+                    Some(fps) => {
+                        let sim_state = app.sim.get_simulation_state_mut();
+                        sim_state.fps = fps.render_fps as u32;
+                        sim_state.ups = fps.update_fps as u32;
+                    }
+                    None => {}
+                }
 
-        gpu.queue
-            .submit([sim_render_command_buffer, gui_render_command_buffer]);
-        output.present();
+                //Sync gui sim state to real sim state
 
-        Ok(())
+                while app.time.can_update() && !app.sim.get_simulation_state_mut().paused {
+                    app.sim.step(gpu);
+                    app.time.update_tick();
+                }
+                Ok(sim_render_command_buffer)
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        }
     }
 }

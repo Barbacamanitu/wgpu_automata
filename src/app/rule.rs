@@ -11,7 +11,6 @@ pub struct Rule {
 #[derive(Debug)]
 pub enum RuleCreationError {
     InvalidRuleString,
-    Unknown,
 }
 
 impl Rule {
@@ -30,16 +29,29 @@ impl Rule {
                 let mut stay_ints: [u32; 8] = [0; 8];
                 for b in born {
                     let b_int = b.to_digit(10);
+
                     match b_int {
-                        Some(b_int_s) => born_ints[(b_int_s - 1) as usize] = 1,
+                        Some(b_int_s) => {
+                            if b_int_s == 0 {
+                                return Err(RuleCreationError::InvalidRuleString);
+                            }
+                            born_ints[(b_int_s - 1) as usize] = 1;
+                        }
                         None => return Err(RuleCreationError::InvalidRuleString),
                     }
                 }
 
                 for s in stay {
                     let s_int = s.to_digit(10);
+
                     match s_int {
-                        Some(s_int_s) => stay_ints[(s_int_s - 1) as usize] = 1,
+                        Some(s_int_s) => {
+                            if s_int_s == 0 {
+                                return Err(RuleCreationError::InvalidRuleString);
+                            } else {
+                                stay_ints[(s_int_s - 1) as usize] = 1
+                            }
+                        }
                         None => return Err(RuleCreationError::InvalidRuleString),
                     }
                 }

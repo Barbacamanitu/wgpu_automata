@@ -1,15 +1,15 @@
-use std::iter;
+pub mod error_window;
 pub mod gui_window;
+pub mod neural_window;
+pub mod number_textedit;
 use egui::FontDefinitions;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
-use wgpu::{CommandEncoder, SurfaceTexture};
-use winit::{
-    event::{Event, WindowEvent},
-    window::Window,
-};
+use winit::{event::Event, window::Window};
 
-use super::{gpu_interface::GPUInterface, simulator::SimulationState, time::Time};
+use super::{
+    gpu_interface::GPUInterface, sim_renderer::SimulationRenderer, simulator::SimulationState, App,
+};
 
 use self::gui_window::GuiWindow;
 
@@ -18,11 +18,10 @@ pub struct Gui {
     render_pass: RenderPass,
     gui_window: GuiWindow,
 }
-
 impl Gui {
     pub fn is_handling_input(&self) -> bool {
         let ctx = self.platform.context();
-        ctx.is_using_pointer() || ctx.wants_keyboard_input()
+        ctx.is_using_pointer() || ctx.wants_keyboard_input() || ctx.is_pointer_over_area()
     }
 
     pub fn get_simulation_state_mut(&mut self) -> &mut SimulationState {
@@ -57,12 +56,14 @@ impl Gui {
 
     pub fn render(
         &mut self,
-        time: &Time,
         gpu: &GPUInterface,
         window: &Window,
         output: &wgpu::SurfaceTexture,
+        app: &mut App,
+        sim_renderer: &mut SimulationRenderer,
     ) -> wgpu::CommandBuffer {
-        self.platform.update_time(time.get_elapsed().as_secs_f64());
+        self.platform
+            .update_time(app.time.get_elapsed().as_secs_f64());
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -76,8 +77,8 @@ impl Gui {
         self.platform.begin_frame();
 
         // Draw the demo application.
-        self.gui_window.ui(&self.platform.context());
-
+        self.gui_window
+            .ui(&self.platform.context(), gpu, app, sim_renderer);
         // End the UI frame. We could now handle the output and draw the UI with the backend.
         let full_output = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(full_output.shapes);
@@ -105,6 +106,7 @@ impl Gui {
                 None,
             )
             .unwrap();
-        encoder.finish()
+        let command_buffer = encoder.finish();
+        command_buffer
     }
 }

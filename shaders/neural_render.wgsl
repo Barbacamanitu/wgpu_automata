@@ -11,7 +11,7 @@ struct VertexOutput {
 };
 
 struct Camera {
-    pos: vec3<f32>,
+    position: vec3<f32>,
     zoom: f32,
 };
 
@@ -49,13 +49,20 @@ var<uniform> cam: Camera;
 @group(1) @binding(1)
 var<uniform> render_params: RenderParams;
 
+fn cam_to_tex_coords(cam: Camera, p: vec2<f32>) -> vec2<f32> {
+    let cam_rect_size = 1.0/cam.zoom;
+    let cx = (cam.position.x + 1.0) / 2.0;
+    let cy = 1.0 - ((cam.position.y + 1.0) / 2.0);
+    let x = cx - (cam_rect_size/2.0) + (p.x*cam_rect_size);
+    let y = cy - (cam_rect_size/2.0) + (p.y*cam_rect_size);
+    return vec2<f32>(x,y);
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dimensions = render_params.sim_size;
-    let in_coords = vec2<f32>(in.tex_coords.x + (cam.pos.x/f32(dimensions.x)),in.tex_coords.y + (cam.pos.y/f32(dimensions.y)));
-    let in_coords_scaled = in_coords * cam.zoom;
-    let cell = textureSample(t_diffuse, s_diffuse, in_coords_scaled);
+    let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy);
+    let cell = textureSample(t_diffuse, s_diffuse, cam2tex);
     let c = cell.rbga;
     return c;
 }

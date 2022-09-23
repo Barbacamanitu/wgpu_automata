@@ -20,6 +20,10 @@ pub struct FPSData {
 }
 
 impl Time {
+    pub fn update_delays(&mut self, updates_per_frame: u32, update_delay: u32) {
+        self.target_updates_per_frame = updates_per_frame;
+        self.update_delay = Duration::from_millis(update_delay as u64);
+    }
     pub fn new(
         updates_per_frame: u32,
         fps_update_duration: Duration,
@@ -70,7 +74,7 @@ impl Time {
         let is_time_left = self.last_frame.elapsed() < self.max_update_time;
         let max_frames_reached: bool = self.updates_this_frame >= self.target_updates_per_frame;
         let delayed_enough = self.last_update.elapsed() > self.update_delay;
-        (is_time_left && !max_frames_reached && delayed_enough)
+        is_time_left && !max_frames_reached && delayed_enough
     }
 
     //returns true if the simulation should run another update tick. This checks to see if there's enough time, and that the max updates per frame havent happened.

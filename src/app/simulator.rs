@@ -1,6 +1,7 @@
-use super::{gpu_interface::GPUInterface, math::IVec2, renderer::Renderer};
+use std::any::Any;
 
-#[derive(Clone)]
+use super::{gpu_interface::GPUInterface, gui::Gui, math::IVec2};
+
 pub struct SimulationState {
     pub paused: bool,
     //Frames per second
@@ -32,6 +33,8 @@ pub trait Simulator {
         (read, write)
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
     fn get_current_texture(&self) -> &wgpu::Texture {
         &self.get_textures()[self.get_read_write().1]
     }
@@ -62,12 +65,13 @@ pub trait Simulator {
 
     fn get_simulation_state_mut(&mut self) -> &mut SimulationState;
 
-    fn sync_state_from_gui(&mut self, r: &mut Renderer) {
+    fn sync_state_from_gui(&mut self, gui: &mut Gui) {
         let sim_state = self.get_simulation_state_mut();
-        let gui_sim_state = r.gui.get_simulation_state_mut();
+        let gui_sim_state = gui.get_simulation_state_mut();
         sim_state.paused = gui_sim_state.paused;
         gui_sim_state.fps = sim_state.fps;
         gui_sim_state.ups = sim_state.ups;
         gui_sim_state.generations = sim_state.generations;
+        let _s = self.get_size();
     }
 }

@@ -17,17 +17,28 @@ fn activation(x: f32) -> f32 {
   return inverse_gaussian(x);
 }
  
+ struct Filter {
+     w0: f32,
+     w1: f32,
+     w2: f32,
+     w3: f32,
+     w4: f32,
+     w5: f32,
+     w6: f32,
+     w7: f32,
+     w8: f32
+ };
 
 @group(0) @binding(0) var input_texture : texture_2d<f32>;
-@group(0) @binding(1)var output_texture : texture_storage_2d<rgba8unorm, write>;
-
+@group(0) @binding(1) var output_texture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<uniform> c_filter : Filter;
 @compute @workgroup_size(16,16)
 fn main(
   @builtin(global_invocation_id) global_id : vec3<u32>,
 ) {
     let dimensions = textureDimensions(input_texture);
     let coords = vec2<i32>(global_id.xy);
-    
+
     if(coords.x >= dimensions.x || coords.y >= dimensions.y) {
         return;
     }
@@ -57,11 +68,11 @@ fn main(
     let me_r = me.r;
 
     let conv_filter : array<f32, 9> = array<f32, 9>
-    (-0.61, 0.91, -0.65, 
-    0.9, 0.68, 0.9, 
-    -0.72, 0.9, -0.75);
+    (-0.72, 0.90, -0.68, 
+    0.92, 0.68, 0.91, 
+    -0.68, 0.9, -0.72);
 
-    let conv = conv_filter[0] * l_up + conv_filter[1] * up + conv_filter[2] * r_up + conv_filter[3] * left + conv_filter[4] * me_r + conv_filter[5] * right + conv_filter[6] * l_down + conv_filter[7] * down + conv_filter[8] * r_down;
+    let conv = c_filter.w0 * l_up + c_filter.w1 * up + c_filter.w2 * r_up + c_filter.w3 * left + c_filter.w4 * me_r + c_filter.w5 * right + c_filter.w6 * l_down + c_filter.w7 * down + c_filter.w8 * r_down;
     let val = clamp(activation(conv),0.0,1.0);
     var g = me.g;
     var b = me.b;
