@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
 const MOVE_SPEED: f32 = 0.04;
-const ZOOM_SPEED: f32 = 0.2;
+const ZOOM_SPEED: f32 = 0.4;
 use crate::renderer::Renderer;
 
 use super::{
@@ -40,7 +40,7 @@ impl Camera {
     }
 
     pub fn handle_input(&mut self, input: &Input, renderer: &Renderer) {
-        self.zoom = (self.zoom + input.scroll_delta * ZOOM_SPEED).clamp(1.0, 32.0);
+        self.zoom = (self.zoom + input.scroll_delta * ZOOM_SPEED * self.zoom).clamp(1.0, 50.0);
 
         let drag_offset = input.drag_offset
             * FVec2::new(

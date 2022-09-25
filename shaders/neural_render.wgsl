@@ -63,6 +63,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dimensions = render_params.sim_size;
     let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy);
     let cell = textureSample(t_diffuse, s_diffuse, cam2tex);
-    let c = cell.rbga;
+    let c = cell.rrra;
     return c;
 }

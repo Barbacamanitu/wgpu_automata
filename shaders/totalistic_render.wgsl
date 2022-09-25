@@ -24,7 +24,10 @@ fn close(a: f32, b: i32) -> bool {
     return abs(a - f32(b)) < 0.1;
 }
 
-fn cam_to_tex_coords(cam: Camera, p: vec2<f32>) -> vec2<f32> {
+
+
+//Transforms camera coordinates to texture coordinates.
+fn cam_to_tex_coords(cam: Camera, p: vec2<f32>,img_size: vec2<i32>) -> vec2<f32> {
     let cam_rect_size = 1.0/cam.zoom;
     let cx = (cam.position.x + 1.0) / 2.0;
     let cy = 1.0 - ((cam.position.y + 1.0) / 2.0);
@@ -59,17 +62,18 @@ var<uniform> render_params: RenderParams;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let alive = vec4<f32>(0.09,0.47,0.0,1.0);
     let dead = vec4<f32>(0.0,0.0,0.0,1.0);
-    //let grid = vec4<f32>(0.45,0.45,0.45,1.0);
+    let grid = vec4<f32>(0.15,0.15,0.15,1.0);
     let dimensions = render_params.sim_size;
     
-    let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy);
+    let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy,render_params.sim_size);
 
-    let cell = textureSample(t_diffuse, s_diffuse, cam2tex);
+    let cell = textureSample(t_diffuse, s_diffuse, cam2tex.xy);
+  
     
-    
+   
+    var c = dead;
     if (close(cell.r,1)) {
-        return alive;
-    } else {
-        return dead;
+        c = alive;
     }
+    return c;
 }
