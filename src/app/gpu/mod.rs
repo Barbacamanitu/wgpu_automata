@@ -1,6 +1,6 @@
 use winit::window::Window;
-
-pub struct GPUInterface {
+pub mod bindgroup;
+pub struct Gpu {
     pub surface: wgpu::Surface,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -8,8 +8,8 @@ pub struct GPUInterface {
     pub size: winit::dpi::PhysicalSize<u32>,
 }
 
-impl GPUInterface {
-    pub fn new(window: &Window) -> GPUInterface {
+impl Gpu {
+    pub fn new(window: &Window) -> Gpu {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -49,7 +49,7 @@ impl GPUInterface {
             present_mode: wgpu::PresentMode::Fifo,
         };
         surface.configure(&device, &config);
-        GPUInterface {
+        Gpu {
             surface,
             device,
             queue,

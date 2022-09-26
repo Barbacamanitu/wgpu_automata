@@ -1,5 +1,5 @@
 use crate::app::{
-    gpu_interface::GPUInterface,
+    gpu::Gpu,
     gui::Gui,
     math::IVec2,
     sim_renderer::{RendererType, SimulationRenderer},
@@ -17,7 +17,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         size: IVec2,
         app_renderer_type: RendererType,
         window: &Window,
@@ -39,7 +39,7 @@ impl Renderer {
         &self.gui
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, gpu: &mut GPUInterface) {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, gpu: &mut Gpu) {
         if new_size.width > 0 && new_size.height > 0 {
             gpu.size = new_size;
             gpu.config.width = new_size.width;
@@ -52,7 +52,7 @@ impl Renderer {
 
     pub fn render(
         &mut self,
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         app: &mut App,
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -62,7 +62,7 @@ impl Renderer {
         let gui_render = self
             .gui
             .render(gpu, window, &output, app, &mut self.sim_renderer);
-        app.sim.sync_state_from_gui(&mut self.gui);
+        app.simulation.sync_state_from_gui(&mut self.gui);
         // let gui_render_response = gui.render(gpu, window, &output, app);
         gpu.queue.submit([sim_render, gui_render]);
         output.present();

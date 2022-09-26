@@ -1,9 +1,6 @@
 use egui::{Context, Response, Slider};
 
-use crate::app::{
-    neural::{Neural, NeuralFilter},
-    App,
-};
+use crate::app::{simulation::neural_parameters::NeuralFilter, App};
 
 pub struct NeuralWindow {
     filter: NeuralFilter,
@@ -85,13 +82,7 @@ impl NeuralWindow {
                 );
             });
             if ui.button("Apply").clicked() {
-                let neural = app.sim.as_any_mut().downcast_mut::<Neural>();
-                match neural {
-                    Some(n) => {
-                        n.set_filter(self.filter.clone());
-                    }
-                    None => {}
-                }
+                app.simulation.neural_state.params.filter = self.filter;
             }
         });
 

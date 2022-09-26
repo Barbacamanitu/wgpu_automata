@@ -1,11 +1,11 @@
 use image::{Pixel, Rgba};
 
-use super::{gpu_interface::GPUInterface, math::IVec2};
+use super::{gpu::Gpu, math::IVec2};
 
 pub struct ImageUtil {}
 
 #[allow(dead_code)]
-pub type ImageType = image::ImageBuffer<image::Rgba<u8>, Vec<u8>>;
+pub type InputImageType = image::ImageBuffer<image::Rgba<u8>, Vec<u8>>;
 
 #[allow(dead_code)]
 pub struct ImageData {
@@ -14,7 +14,7 @@ pub struct ImageData {
 }
 
 impl ImageUtil {
-    pub fn random_image_monochrome(w: u32, h: u32) -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
+    pub fn random_image_monochrome(w: u32, h: u32) -> InputImageType {
         let mut image_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
             image::ImageBuffer::new(w, h);
         for (_x, _y, p) in image_buffer.enumerate_pixels_mut() {
@@ -29,7 +29,7 @@ impl ImageUtil {
         image_buffer
     }
 
-    pub fn random_image_color(w: u32, h: u32) -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
+    pub fn random_image_color(w: u32, h: u32) -> InputImageType {
         let mut image_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
             image::ImageBuffer::new(w, h);
 
@@ -45,12 +45,7 @@ impl ImageUtil {
     }
 
     #[allow(dead_code)]
-    pub fn tex_to_buffer(
-        tex: &wgpu::Texture,
-        gpu: &GPUInterface,
-        width: u32,
-        height: u32,
-    ) -> ImageData {
+    pub fn tex_to_buffer(tex: &wgpu::Texture, gpu: &Gpu, width: u32, height: u32) -> ImageData {
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

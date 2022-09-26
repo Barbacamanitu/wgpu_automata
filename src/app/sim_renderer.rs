@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::{
-    gpu_interface::GPUInterface,
+    gpu::Gpu,
     math::{IVec2, Vertex},
     wgsl_preproc::WgslPreProcessor,
     App,
@@ -54,7 +54,7 @@ const VERTICES: &[Vertex] = &[
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 impl SimulationRenderer {
-    fn create_pipeline(shader: &wgpu::ShaderModule, gpu: &GPUInterface) -> wgpu::RenderPipeline {
+    fn create_pipeline(shader: &wgpu::ShaderModule, gpu: &Gpu) -> wgpu::RenderPipeline {
         let texture_bind_group_layout =
             gpu.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -164,7 +164,7 @@ impl SimulationRenderer {
         render_pipeline
     }
 
-    pub fn new(gpu: &GPUInterface, size: IVec2, r_type: RendererType) -> Self {
+    pub fn new(gpu: &Gpu, size: IVec2, r_type: RendererType) -> Self {
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -236,10 +236,14 @@ impl SimulationRenderer {
 
     fn render_simulation(
         &mut self,
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         app: &mut App,
         output: &wgpu::SurfaceTexture,
     ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
+        println!(
+            "Size: {:?}, Render Size: {:?}",
+            app.simulation.size, self.size
+        );
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -249,7 +253,7 @@ impl SimulationRenderer {
                 label: Some("Render Encoder"),
             });
 
-        let render_tex = app.sim.get_current_texture();
+        let render_tex = app.simulation.get_current_texture();
         let texture_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.get_pipeline().get_bind_group_layout(0),
             entries: &[
@@ -275,9 +279,10 @@ impl SimulationRenderer {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+        let isize: IVec2 = app.simulation.size.into();
         let r_params = RenderParams {
             window_size: self.size.as_slice(),
-            sim_size: app.sim.get_size().as_slice(),
+            sim_size: isize.as_slice(),
         };
         //println!("Render params: {:?}", r_params);
         let render_params_buffer =
@@ -333,7 +338,7 @@ impl SimulationRenderer {
 
     pub fn render(
         &mut self,
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         app: &mut App,
         output: &wgpu::SurfaceTexture,
     ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
@@ -344,7 +349,7 @@ impl SimulationRenderer {
                 app.time.render_tick();
                 match app.time.get_fps() {
                     Some(fps) => {
-                        let sim_state = app.sim.get_simulation_state_mut();
+                        let sim_state = app.simulation.get_simulation_state_mut();
                         sim_state.fps = fps.render_fps as u32;
                         sim_state.ups = fps.update_fps as u32;
                     }
@@ -353,8 +358,8 @@ impl SimulationRenderer {
 
                 //Sync gui sim state to real sim state
 
-                while app.time.can_update() && !app.sim.get_simulation_state_mut().paused {
-                    app.sim.step(gpu);
+                while app.time.can_update() && !app.simulation.get_simulation_state_mut().paused {
+                    app.simulation.step(gpu);
                     app.time.update_tick();
                 }
                 Ok(sim_render_command_buffer)

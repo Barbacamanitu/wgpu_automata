@@ -63,6 +63,15 @@ impl UVec2 {
     }
 }
 
+impl Into<IVec2> for UVec2 {
+    fn into(self) -> IVec2 {
+        IVec2 {
+            x: self.x as i32,
+            y: self.y as i32,
+        }
+    }
+}
+
 impl Add<FVec2> for FVec2 {
     type Output = FVec2;
 

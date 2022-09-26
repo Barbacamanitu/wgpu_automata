@@ -4,21 +4,17 @@ use super::{
     number_textedit::{self, FloatTextEdit},
 };
 use crate::app::{
-    gpu_interface::GPUInterface,
+    gpu::Gpu,
     math::UVec2,
-    neural::{NeuralFilter, NeuralParams},
+    rule::Rule,
     sim_renderer::{RendererType, SimulationRenderer},
-    simulator::SimulationState,
-    totalistic::TotalisticParams,
-    App, SimParams,
+    simulation::{
+        neural_parameters::{NeuralCreationParameters, NeuralParameters},
+        SimulationState, SimulationType,
+    },
+    App,
 };
 use egui::{Align2, Context};
-
-#[derive(PartialEq)]
-enum SimulationType {
-    Totalistic,
-    Neural,
-}
 
 pub struct GuiWindow {
     pub sim_state: SimulationState,
@@ -40,51 +36,43 @@ impl GuiWindow {
             sim_size: UVec2::new(512, 512),
             error_window: None,
             neural_window: NeuralWindow::new(),
-            updates_per_frame: 0,
+            updates_per_frame: 1,
             update_delay: 0,
         }
     }
 
-    fn remake_sim(
-        &mut self,
-        app: &mut App,
-        sim_renderer: &mut SimulationRenderer,
-        gpu: &GPUInterface,
-    ) {
-        let sim_params = match self.selected_simulation_type {
-            SimulationType::Totalistic => SimParams::Totalistic(TotalisticParams {
-                size: self.sim_size,
-                rule_str: self.rule_str.clone(),
-            }),
-            SimulationType::Neural => SimParams::Neural(NeuralParams {
-                size: self.sim_size,
-                filter: self.neural_window.get_filter(),
-            }),
-        };
+    fn remake_sim(&mut self, app: &mut App, sim_renderer: &mut SimulationRenderer, gpu: &Gpu) {
         let r_type = match self.selected_simulation_type {
             SimulationType::Totalistic => RendererType::Totalistic,
             SimulationType::Neural => RendererType::Neural,
         };
-        let app_remake = app.remake(sim_params, gpu);
-        match app_remake {
-            Ok(_) => println!("Remade simulation:"),
-            Err(err) => {
-                println!("failed to make sim");
-                let err_str = match err {
-                    crate::app::RemakeError::RuleError => "Invalid Rule String",
-                    crate::app::RemakeError::NeuralError => "Neural Error.",
-                };
-                let e = format!("Cause: {}", err_str);
-                self.error_window = Some(ErrorWindow::new("Simulation Creation Error", e.as_str()));
+        match self.selected_simulation_type {
+            SimulationType::Totalistic => {
+                let rule_create = Rule::from_rule_str(self.rule_str.as_str());
+                match rule_create {
+                    Ok(rule) => {
+                        app.simulation.totalistic_state.params.rule = rule;
+                    }
+                    Err(_) => {
+                        let e = format!("Cause: {}", "Rule creation error.");
+                        self.error_window =
+                            Some(ErrorWindow::new("Simulation Creation Error", e.as_str()));
+                    }
+                }
+            }
+            SimulationType::Neural => {
+                app.simulation.neural_state.params.filter = self.neural_window.get_filter();
             }
         }
+        app.simulation
+            .remake(gpu, self.sim_size, self.selected_simulation_type);
         sim_renderer.set_renderer_type(r_type);
     }
 
     pub fn ui(
         &mut self,
         ctx: &Context,
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         app: &mut App,
         sim_renderer: &mut SimulationRenderer,
     ) {
@@ -166,6 +154,10 @@ impl GuiWindow {
                 ui.label("Update Delay:");
                 ui.add(egui::Slider::new(&mut self.update_delay, 0..=1000).integer());
                 if ui.button("Apply").clicked() {
+                    println!(
+                        "Update time: UPS: {}, Delay: {}",
+                        self.updates_per_frame, self.update_delay
+                    );
                     app.time
                         .update_delays(self.updates_per_frame, self.update_delay);
                 }

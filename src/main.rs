@@ -1,11 +1,10 @@
 mod app;
 mod renderer;
 use app::{
-    gpu_interface::GPUInterface,
+    gpu::Gpu,
     math::{IVec2, UVec2},
     sim_renderer::RendererType,
     time::Time,
-    totalistic::TotalisticParams,
 };
 use renderer::Renderer;
 use winit::{
@@ -17,7 +16,7 @@ use winit::{
 
 use std::time::Duration;
 
-use crate::app::{App, SimParams};
+use crate::app::App;
 
 fn main() {
     pollster::block_on(run());
@@ -33,14 +32,9 @@ async fn run() {
         .with_position(PhysicalPosition::new(0, 0))
         .build(&event_loop)
         .unwrap();
-    let mut gpu = GPUInterface::new(&window);
+    let mut gpu = Gpu::new(&window);
 
     let mut renderer = Renderer::new(&gpu, renderer_size, RendererType::Totalistic, &window);
-
-    let params = SimParams::Totalistic(TotalisticParams {
-        size: sim_size,
-        rule_str: "B3/S23".to_owned(),
-    });
 
     let time = Time::new(
         1,
@@ -49,7 +43,7 @@ async fn run() {
         Duration::from_millis(32),
     );
 
-    let mut app: App = App::new(params.clone(), time, &gpu);
+    let mut app: App = App::new(sim_size, time, &gpu);
     event_loop.run(move |event, _, control_flow| {
         renderer.get_gui_mut().handle_events(&event);
         match event {

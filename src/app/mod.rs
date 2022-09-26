@@ -1,15 +1,14 @@
 pub mod camera;
-pub mod gpu_interface;
+pub mod gpu;
+mod grid_renderer;
 pub mod gui;
 pub mod image_util;
 pub mod input;
 pub mod math;
-pub mod neural;
 pub mod rule;
 pub mod sim_renderer;
-pub mod simulator;
+pub mod simulation;
 pub mod time;
-pub mod totalistic;
 pub mod wgsl_preproc;
 
 use winit::event::WindowEvent;
@@ -18,13 +17,12 @@ use crate::renderer::Renderer;
 
 use self::{
     camera::Camera,
-    gpu_interface::GPUInterface,
+    gpu::Gpu,
     gui::Gui,
     input::Input,
-    neural::{Neural, NeuralParams},
-    simulator::Simulator,
+    math::UVec2,
+    simulation::{neural_parameters::NeuralCreationParameters, Simulation},
     time::Time,
-    totalistic::{Totalistic, TotalisticParams},
 };
 
 pub enum RemakeError {
@@ -32,54 +30,23 @@ pub enum RemakeError {
     NeuralError,
 }
 
-#[derive(Clone)]
-pub enum SimParams {
-    Totalistic(TotalisticParams),
-    Neural(NeuralParams),
-}
-
 pub struct App {
     pub camera: Camera,
     pub time: Time,
-    pub sim: Box<dyn Simulator>,
+    pub simulation: Simulation,
     pub input: Input,
 }
 
 impl App {
-    pub fn new(sim_params: SimParams, time: Time, gpu: &GPUInterface) -> App {
-        let sim: Box<dyn Simulator> = match sim_params {
-            SimParams::Totalistic(params) => Box::new(Totalistic::new(&gpu, params).unwrap()),
-            SimParams::Neural(params) => Box::new(Neural::new(&gpu, params).unwrap()),
-        };
-
+    pub fn new(size: UVec2, time: Time, gpu: &Gpu) -> App {
         let camera = Camera::new();
+        let s = Simulation::new(gpu, size);
         App {
             time,
-            sim: sim,
             camera,
             input: Input::new(),
+            simulation: s,
         }
-    }
-
-    pub fn remake(&mut self, sim_params: SimParams, gpu: &GPUInterface) -> Result<(), RemakeError> {
-        let sim: Box<dyn Simulator> = match sim_params {
-            SimParams::Totalistic(params) => {
-                let totalistic = Totalistic::new(&gpu, params);
-                match totalistic {
-                    Ok(t) => Box::new(t),
-                    Err(_err) => return Err(RemakeError::RuleError),
-                }
-            }
-            SimParams::Neural(params) => {
-                let neural = Neural::new(&gpu, params);
-                match neural {
-                    Ok(n) => Box::new(n),
-                    Err(_err) => return Err(RemakeError::NeuralError),
-                }
-            }
-        };
-        self.sim = sim;
-        Ok(())
     }
 
     pub fn handle_input(&mut self, event: &WindowEvent, gui: &Gui, renderer: &Renderer) {

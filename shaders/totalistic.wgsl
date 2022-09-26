@@ -41,10 +41,10 @@ fn compute_cell(val: f32, sum: f32, rules: Rules) -> f32 {
 
 @group(0) @binding(0) var input_texture : texture_2d<f32>;
 @group(0) @binding(1) var output_texture : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> rules : Rules;
+@group(1) @binding(0) var<uniform> rules : Rules;
 
 @compute @workgroup_size(16, 16)
-fn totalistic_main(
+fn main(
   @builtin(global_invocation_id) global_id : vec3<u32>,
 ) {
     let dimensions = textureDimensions(input_texture);

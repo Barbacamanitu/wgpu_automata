@@ -7,9 +7,7 @@ use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use winit::{event::Event, window::Window};
 
-use super::{
-    gpu_interface::GPUInterface, sim_renderer::SimulationRenderer, simulator::SimulationState, App,
-};
+use super::{gpu::Gpu, sim_renderer::SimulationRenderer, simulation::SimulationState, App};
 
 use self::gui_window::GuiWindow;
 
@@ -28,7 +26,7 @@ impl Gui {
         &mut self.gui_window.sim_state
     }
 
-    pub fn new(gpu: &GPUInterface, window: &Window) -> Gui {
+    pub fn new(gpu: &Gpu, window: &Window) -> Gui {
         let size = window.inner_size();
         let platform = Platform::new(PlatformDescriptor {
             physical_width: (size.width as u32) / 2,
@@ -56,7 +54,7 @@ impl Gui {
 
     pub fn render(
         &mut self,
-        gpu: &GPUInterface,
+        gpu: &Gpu,
         window: &Window,
         output: &wgpu::SurfaceTexture,
         app: &mut App,
