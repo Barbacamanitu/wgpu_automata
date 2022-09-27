@@ -132,24 +132,34 @@ impl Simulation {
     pub fn new(gpu: &Gpu, size: UVec2) -> Simulation {
         let n_state = NeuralState::new(gpu);
         let textures_layout = Rc::new(n_state.pipeline.get_bind_group_layout(0));
-        let input_image = image_util::ImageUtil::random_image_monochrome(size.x, size.y);
+        //let input_image = image_util::ImageUtil::random_image_monochrome(size.x, size.y);
+        let input_image = image::load_from_memory(include_bytes!("gol1.png"))
+            .unwrap()
+            .to_rgba8();
+        let mut s_state = SimulationState::default();
+        s_state.paused = true;
         Simulation {
             simulation_type: SimulationType::Totalistic,
             neural_state: NeuralState::new(gpu),
             totalistic_state: TotalisticState::new(gpu),
             compute_textures: ComputeTextures::new(textures_layout, input_image, gpu),
             current_frame: 0,
-            sim_state: SimulationState::default(),
+            sim_state: s_state,
             size,
         }
     }
 
     pub fn remake(&mut self, gpu: &Gpu, size: UVec2, s_type: SimulationType) {
         self.size = size;
-        let input_image = match s_type {
+        /*let input_image = match s_type {
             SimulationType::Totalistic => ImageUtil::random_image_monochrome(size.x, size.y),
             SimulationType::Neural => ImageUtil::random_image_color(size.x, size.y),
-        };
+        };*/
+        let input_image = image::load_from_memory(include_bytes!("gol1.png"))
+            .unwrap()
+            .to_rgba8();
+        let isize = input_image.dimensions();
+        self.size = UVec2::new(isize.0, isize.1);
         let layout = Rc::new(self.neural_state.pipeline.get_bind_group_layout(0));
         self.compute_textures = ComputeTextures::new(layout, input_image, gpu);
         self.current_frame = 0;

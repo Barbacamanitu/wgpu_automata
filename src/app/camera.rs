@@ -57,7 +57,7 @@ impl Camera {
         } else {
             self.position = self.position + input.movement * MOVE_SPEED * (1.0 / self.zoom);
         }
-        self.position.x = self.position.x.clamp(-1.0, 1.0);
-        self.position.y = self.position.y.clamp(-1.0, 1.0);
+        self.position.x = self.position.x.clamp(-2.0, 2.0);
+        self.position.y = self.position.y.clamp(-2.0, 2.0);
     }
 }

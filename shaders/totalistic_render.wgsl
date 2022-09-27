@@ -27,12 +27,16 @@ fn close(a: f32, b: i32) -> bool {
 
 
 //Transforms camera coordinates to texture coordinates.
-fn cam_to_tex_coords(cam: Camera, p: vec2<f32>,img_size: vec2<i32>) -> vec2<f32> {
-    let cam_rect_size = 1.0/cam.zoom;
+fn cam_to_tex_coords(cam: Camera, p: vec2<f32>,r_params: RenderParams) -> vec2<f32> {
+    let ssize = r_params.sim_size;
+    let rsize = r_params.window_size;
+    let ar = f32(rsize.y) / f32(rsize.x);
+    let r = 1.0/cam.zoom;
+    let cam_rect_size = vec2<f32>(r,r*ar);
     let cx = (cam.position.x + 1.0) / 2.0;
     let cy = 1.0 - ((cam.position.y + 1.0) / 2.0);
-    let x = cx - (cam_rect_size/2.0) + (p.x*cam_rect_size);
-    let y = cy - (cam_rect_size/2.0) + (p.y*cam_rect_size);
+    let x = cx - (cam_rect_size.x/2.0) + (p.x*cam_rect_size.x);
+    let y = cy - (cam_rect_size.y/2.0) + (p.y*cam_rect_size.y);
     return vec2<f32>(x,y);
 }
 
@@ -65,7 +69,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let grid = vec4<f32>(0.15,0.15,0.15,1.0);
     let dimensions = render_params.sim_size;
     
-    let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy,render_params.sim_size);
+    let cam2tex = cam_to_tex_coords(cam,in.tex_coords.xy,render_params);
 
     let cell = textureSample(t_diffuse, s_diffuse, cam2tex.xy);
   

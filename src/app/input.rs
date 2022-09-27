@@ -101,13 +101,13 @@ impl Input {
                 modifiers: _,
             } => match state {
                 winit::event::ElementState::Pressed => match button {
-                    MouseButton::Left => {
+                    MouseButton::Right => {
                         self.mousedown();
                     }
                     _ => {}
                 },
                 winit::event::ElementState::Released => match button {
-                    MouseButton::Left => {
+                    MouseButton::Right => {
                         self.mouseup();
                     }
                     _ => {}

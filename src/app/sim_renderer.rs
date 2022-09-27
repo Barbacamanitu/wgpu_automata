@@ -280,6 +280,7 @@ impl SimulationRenderer {
             window_size: self.size.as_slice(),
             sim_size: isize.as_slice(),
         };
+
         let render_params_buffer =
             gpu.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
