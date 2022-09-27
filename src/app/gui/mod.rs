@@ -1,7 +1,6 @@
 pub mod error_window;
 pub mod gui_window;
 pub mod neural_window;
-pub mod number_textedit;
 use egui::FontDefinitions;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};

@@ -240,10 +240,6 @@ impl SimulationRenderer {
         app: &mut App,
         output: &wgpu::SurfaceTexture,
     ) -> Result<wgpu::CommandBuffer, wgpu::SurfaceError> {
-        println!(
-            "Size: {:?}, Render Size: {:?}",
-            app.simulation.size, self.size
-        );
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -284,7 +280,6 @@ impl SimulationRenderer {
             window_size: self.size.as_slice(),
             sim_size: isize.as_slice(),
         };
-        //println!("Render params: {:?}", r_params);
         let render_params_buffer =
             gpu.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {

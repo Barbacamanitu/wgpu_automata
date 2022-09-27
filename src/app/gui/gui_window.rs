@@ -1,8 +1,4 @@
-use super::{
-    error_window::ErrorWindow,
-    neural_window::NeuralWindow,
-    number_textedit::{self, FloatTextEdit},
-};
+use super::{error_window::ErrorWindow, neural_window::NeuralWindow};
 use crate::app::{
     gpu::Gpu,
     math::UVec2,
